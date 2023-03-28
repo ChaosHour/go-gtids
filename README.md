@@ -2,7 +2,7 @@
 A Go App To Check For Errant Transactions
 
 ## Usage
-```
+```Go
 ./go-gtids -s < source host> -t <target host>
 
 
@@ -17,7 +17,8 @@ A Go App To Check For Errant Transactions
 
 
 ## Example
-```Testing MySQL 8 & GTID's
+```Go
+Testing MySQL 8 & GTID's
 
 mysql --version
 mysql  Ver 8.0.32-24 for Linux on x86_64 (Percona Server (GPL), Release '24', Revision 'e5c6e9d2')
@@ -68,4 +69,19 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 - 212036
 
 The Errant Transaction was resolved. You will still need to sync your data.
+```
+
+```Go
+To build:
+
+go build -o go-gtids
+
+FreeBSD:
+env GOOS=freebsd GOARCH=amd64 go build .
+
+On Mac:
+env GOOS=darwin GOARCH=amd64 go build .
+
+Linux:
+env GOOS=linux GOARCH=amd64 go build .
 ```
