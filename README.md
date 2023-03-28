@@ -38,7 +38,7 @@ root@replica:~# mysql -e "delete from book.million_words where id = 212036 limit
 
 Checked for Errant Transactions:  -s = <primary> -t = <replica>
 
-(data-sync) klarsen@Mac-Book-Pro2 data-sync % go run . -s 10.5.0.152 -t 10.5.0.153
+(data-sync) klarsen@Mac-Book-Pro2 data-sync % ./go-gtids -s 10.5.0.152 -t 10.5.0.153
 [+] Source gtid_executed: 1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1,
 c4709bcc-c9bb-11ed-8d19-02a36d996b94:1-33
 [+] Target gtid_executed: 1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-2,
@@ -53,7 +53,7 @@ root@primary:~# mysql -e "SET GTID_NEXT='1d1fff5a-c9bc-11ed-9c19-02a36d996b94:2'
 
 Then checked again:
 
-(data-sync) klarsen@Mac-Book-Pro2 data-sync % go run . -s 10.5.0.152 -t 10.5.0.153
+(data-sync) klarsen@Mac-Book-Pro2 data-sync % ./go-gtids -s 10.5.0.152 -t 10.5.0.153
 [+] Source gtid_executed: 1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-2,
 c4709bcc-c9bb-11ed-8d19-02a36d996b94:1-33
 [+] Target gtid_executed: 1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-2,
@@ -70,6 +70,13 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 
 The Errant Transaction was resolved. You will still need to sync your data.
 ```
+
+
+Tools Used for Data validation:
+```Go
+https://github.com/datafold/data-diff
+```
+
 
 ```Go
 To build:
