@@ -35,6 +35,7 @@ func readMyCnf() {
 	}
 }
 
+/*
 // connet to the source database and the target Host(s) database at the same time. Show that you are connected to each source and target database
 func connectToDatabase(source string, target string) {
 
@@ -53,5 +54,33 @@ func connectToDatabase(source string, target string) {
 	err = db2.Ping()
 	if err != nil {
 		log.Fatal(err)
+	}
+}
+*/
+
+// connect to the source database and the target Host(s) database at the same time. Show that you are connected to each source and target database
+func connectToDatabase(source string, targets string) {
+	// connect to the source database
+	db1, err = sql.Open("mysql", os.Getenv("MYSQL_USER")+":"+os.Getenv("MYSQL_PASSWORD")+"@tcp("+source+":3306)/")
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db1.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// connect to the target Host(s) database
+	targetHosts := strings.Split(targets, ",")
+	for _, target := range targetHosts {
+		db2, err = sql.Open("mysql", os.Getenv("MYSQL_USER")+":"+os.Getenv("MYSQL_PASSWORD")+"@tcp("+target+":3306)/")
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = db2.Ping()
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Println(blue("[+]"), "Connected to target:", target)
 	}
 }
