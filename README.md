@@ -76,9 +76,9 @@ Working on adding some more functionality to this Go App to make it more useful.
 
 ```Go
 ./go-gtids -s 10.5.0.152 -t 10.5.0.153
-`![#0000FF][+]` Source -> 10.8.0.152 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
-`![#FFFF00][+]` Target -> 10.8.0.153 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
-`![#008000][+]` Errant Transactions:
+`#0000FF[+]` Source -> 10.8.0.152 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+`#FFFF00[+]` Target -> 10.8.0.153 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+`#008000[+]` Errant Transactions:
 ```
 
 
