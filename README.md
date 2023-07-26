@@ -81,6 +81,23 @@ Working on adding some more functionality to this Go App to make it more useful.
 [+] Errant Transactions:
 ```
 
+```Go
+go-gtids on  feature via 🐹 v1.20.6 
+❯ go run . -s 10.8.0.152 -t 10.8.0.153,10.8.0.154                       
+[+] Source -> 10.8.0.152 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+[+] Target -> 10.8.0.153 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+[+] Errant Transactions: 
+[+] Target -> 10.8.0.154 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+[+] Errant Transactions: 
+
+go-gtids on  feature via 🐹 v1.20.6 
+❯ go run . -s 10.8.0.152 -t 10.8.0.153           
+[+] Source -> 10.8.0.152 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+[+] Target -> 10.8.0.153 gtid_executed: a87cceac-2a7d-11ee-94e9-02f3702bee8c:1-22
+[+] Errant Transactions: 
+```
+
+
 
 Tools Used for Data validation:
 ```Go
