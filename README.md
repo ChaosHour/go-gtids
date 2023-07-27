@@ -75,17 +75,14 @@ The Errant Transaction was resolved. You will still need to sync your data.
 Working on adding some more functionality to this Go App to make it more useful.
 
 ```Go
-go-gtids on  feature [!] via 🐹 v1.20.6 took 4s 
 ❯ go run . -s 10.8.0.152 -t 10.8.0.153
 [+] Source -> 10.8.0.152 gtid_executed: 86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
 [+] Target -> 10.8.0.153 gtid_executed: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1,
 86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
 [-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1
 [!] Do you want to fix the errant transactions? (y/n)
-
+y
 [+] Errant transactions fixed!
-
-
 
 go-gtids on  feature [!] via 🐹 v1.20.6 took 2s 
 ❯ go run . -s 10.8.0.152 -t 10.8.0.153
