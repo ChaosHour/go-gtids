@@ -11,9 +11,10 @@ import (
 
 // Define flags
 var (
-	source = flag.String("s", "", "Source Host")
-	target = flag.String("t", "", "Target Host(s) (comma-separated)")
-	help   = flag.Bool("h", false, "Print help")
+	source  = flag.String("s", "", "Source Host")
+	target  = flag.String("t", "", "Target Host(s) (comma-separated)")
+	fixgtid = flag.String("fix", "", "Fix GTID set")
+	help    = flag.Bool("h", false, "Print help")
 )
 
 // define colors
@@ -49,6 +50,8 @@ func main() {
 	// show that each connection is working by printing the gtid_executed value
 	connectToDatabase(*source, *target)
 	checkGtidSetSubset(db1, db2, *source, *target)
+	// check if the -fix flag is set
+
 	defer db1.Close()
 	defer db2.Close()
 }

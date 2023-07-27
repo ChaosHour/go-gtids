@@ -2,12 +2,44 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"database/sql"
 )
+
+func fixGtidSet(db1 *sql.DB, errantTransactions string) error {
+	// This needs to be ran on the primary database
+
+	// set GTID_NEXT to the errantTransactions value
+	_, err := db1.Exec("SET GTID_NEXT='" + errantTransactions + "'")
+	if err != nil {
+		return err
+	}
+
+	// execute a BEGIN statement
+	_, err = db1.Exec("BEGIN")
+	if err != nil {
+		return err
+	}
+
+	// execute a COMMIT statement
+	_, err = db1.Exec("COMMIT")
+	if err != nil {
+		return err
+	}
+
+	// set GTID_NEXT back to AUTOMATIC
+	_, err = db1.Exec("SET GTID_NEXT='AUTOMATIC'")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // on the source and target Host(s) database, get the gtid_executed
 func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) {
@@ -40,6 +72,21 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 			fmt.Println(green("[+]"), "Errant Transactions:", errantTransactions)
 		} else {
 			fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
+			// ask the user if they want to fix the errant transactions
+			fmt.Println(yellow("[!]"), "Do you want to fix the errant transactions? (y/n)")
+			reader := bufio.NewReader(os.Stdin)
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(answer)
+			if answer == "y" {
+				// fix the errant transactions
+				err = fixGtidSet(db1, errantTransactions)
+				if err != nil {
+					log.Fatal(err)
+				}
+				fmt.Println(green("[+]"), "Errant transactions fixed!")
+			} else {
+				fmt.Println(yellow("[!]"), "Errant transactions not fixed.")
+			}
 		}
 	}
 }
