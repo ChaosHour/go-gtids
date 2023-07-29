@@ -97,7 +97,7 @@ go-gtids on  feature [!] via 🐹 v1.20.6 took 2s
 ## Starting over with the GTID logic as it was not working as expected. 
 
 ```Go
-I was able to resolve Errant Transactions like following:
+I was able to resolve Errant Transactions like the following:
 - [-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1
 But as soon as it was a range, it would not work.
 - [-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:4-6
