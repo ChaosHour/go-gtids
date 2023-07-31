@@ -20,7 +20,7 @@ Usage: go-gtids -s <source> -t <target> [-fix]
 
 
 
-## Creddentials
+## Credentials
 ```Go
 The credentials are stored in the .my.cnf file in the users home directory and are read by the app.
 
