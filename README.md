@@ -3,15 +3,18 @@ A Go App To Check For Errant Transactions
 
 ## Usage
 ```Go
-./go-gtids -s < source host> -t <target host>
+./go-gtids -h
+Usage: go-gtids -s <source> -t <target> [-fix]
 
 
 ./go-gtids -help
-  -h	Print help
+ -fix
+        fix the GTID set subset issue
+  -h    Print help
   -s string
-    	Source Host
+        Source Host
   -t string
-    	Target Host
+        Target Host
 
 ```
 
@@ -71,43 +74,35 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 The Errant Transaction was resolved. You will still need to sync your data.
 ```
 
-
-Working on adding some more functionality to this Go App to make it more useful.
-
-```Go
-❯ go run . -s 10.8.0.152 -t 10.8.0.153
-[+] Source -> 10.8.0.152 gtid_executed: 86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
-[+] Target -> 10.8.0.153 gtid_executed: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1,
-86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
-[-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1
-[!] Do you want to fix the errant transactions? (y/n)
-y
-[+] Errant transactions fixed!
-
-go-gtids on  feature [!] via 🐹 v1.20.6 took 2s 
-❯ go run . -s 10.8.0.152 -t 10.8.0.153
-[+] Source -> 10.8.0.152 gtid_executed: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1,
-86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
-[+] Target -> 10.8.0.153 gtid_executed: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1,
-86c55041-2cb9-11ee-9a0d-02f3702bee8c:1-22
-[+] Errant Transactions: 
-```
+## Tools Used for Data validation:
+- [Data-Diff](https://github.com/datafold/data-diff)
 
 
-## Starting over with the GTID logic as it was not working as expected. 
 
-```Go
-I was able to resolve Errant Transactions like the following:
-- [-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:1
-But as soon as it was a range, it would not work.
-- [-] Errant Transactions: 5e20e423-2cba-11ee-ab46-02f3702bee8c:4-6
-```
 
-Tools Used for Data validation:
-```Go
-https://github.com/datafold/data-diff
-```
+## Working on adding some more functionality to this Go App to make it more useful.
+- Added code and the logic to check for Errant Transactions.
+- Added a -fix flag to fix the errant transaction.
+- Currently this only applies a dummy transaction to the Primary and that is replicated to the Replica's to fix the errant transaction.
 
+
+
+
+## Screenshots
+
+<img src="screenshots/Check_GTIDs.png" width="453" height="320" />
+
+
+
+
+
+
+
+
+
+
+
+<img src="screenshots/Fix_GTIDs.png" width="453" height="320" />
 
 ```Go
 To build:

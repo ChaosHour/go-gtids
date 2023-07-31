@@ -11,10 +11,10 @@ import (
 
 // Define flags
 var (
-	source  = flag.String("s", "", "Source Host")
-	target  = flag.String("t", "", "Target Host(s) (comma-separated)")
-	fixgtid = flag.String("fix", "", "Fix GTID set")
-	help    = flag.Bool("h", false, "Print help")
+	source = flag.String("s", "", "Source Host")
+	target = flag.String("t", "", "Target Host")
+	fix    = flag.Bool("fix", false, "fix the GTID set subset issue")
+	help   = flag.Bool("h", false, "Print help")
 )
 
 // define colors
@@ -30,7 +30,7 @@ func init() {
 
 // print the help message
 func printHelp() {
-	fmt.Println("Usage: ./go-gtids -s < source host> -t <target host>")
+	fmt.Println("Usage: go-gtids -s <source> -t <target> [-fix]")
 }
 
 // main function
@@ -51,6 +51,11 @@ func main() {
 	connectToDatabase(*source, *target)
 	checkGtidSetSubset(db1, db2, *source, *target)
 	// check if the -fix flag is set
+	//if *fix {
+	// if the -fix flag is set, then fix the GTID set subset issue
+	//	fixGtidSetSubset(db1, db2, *source, *target)
+	//}
+	// close the database connections
 
 	defer db1.Close()
 	defer db2.Close()
