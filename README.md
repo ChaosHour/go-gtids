@@ -90,7 +90,7 @@ The Errant Transaction was resolved. You will still need to sync your data.
 
 ## Screenshots
 
-<img src="screenshots/Check_GTIDs.png" width="634" height="275" />
+<img src="screenshots/Check_GTIDs.png" width="619" height="173" />
 
 
 
