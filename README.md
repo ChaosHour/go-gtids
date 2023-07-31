@@ -22,7 +22,7 @@ Usage: go-gtids -s <source> -t <target> [-fix]
 
 ## Credentials
 ```Go
-The credentials are stored in the .my.cnf file in the users home directory and are read by the app.
+The credentials are stored in the ~/.my.cnf file in the users home directory and are read by the app.
 
 // read the ~/.my.cnf file to get the database credentials
 func readMyCnf() {
