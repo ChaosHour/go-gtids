@@ -90,7 +90,7 @@ The Errant Transaction was resolved. You will still need to sync your data.
 
 ## Screenshots
 
-<img src="screenshots/Check_GTIDs.png" width="453" height="320" />
+<img src="screenshots/Check_GTIDs.png" width="853" height="420" />
 
 
 
@@ -102,7 +102,7 @@ The Errant Transaction was resolved. You will still need to sync your data.
 
 
 
-<img src="screenshots/Fix_GTIDs.png" width="453" height="320" />
+<img src="screenshots/Fix_GTIDs.png" width="853" height="420" />
 
 ```Go
 To build:

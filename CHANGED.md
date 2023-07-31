@@ -1,4 +1,4 @@
-The use of two files from the Orchastrator Project.
+The use of two files from the Orchestrator Project.
 
 - https://github.com/openark/orchestrator/blob/master/go/inst/oracle_gtid_set.go
 - https://github.com/openark/orchestrator/blob/master/go/inst/oracle_gtid_set_entry.go
@@ -28,7 +28,7 @@ The license for the code is as follows and is included in the file.
 */
 
 
-## Why did you just not import the Orchastrator module?
+## Why did you just not import the Orchestrator module?
 ---------------------------------------------------
 
 I tried and failed: 
