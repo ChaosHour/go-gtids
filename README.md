@@ -3,15 +3,58 @@ A Go App To Check For Errant Transactions
 
 ## Usage
 ```Go
-./go-gtids -s < source host> -t <target host>
+./go-gtids -h
+Usage: go-gtids -s <source> -t <target> [-fix]
 
 
 ./go-gtids -help
-  -h	Print help
+ -fix
+        fix the GTID set subset issue
+  -h    Print help
   -s string
-    	Source Host
+        Source Host
   -t string
-    	Target Host
+        Target Host
+
+```
+
+
+
+## Credentials
+```Go
+The credentials are stored in the ~/.my.cnf file in the users home directory and are read by the app.
+
+// read the ~/.my.cnf file to get the database credentials
+func readMyCnf() {
+	file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
+	if err != nil {
+		log.Fatal(err)
+	}
+	lines := strings.Split(string(file), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "user") {
+			os.Setenv("MYSQL_USER", strings.TrimSpace(line[5:]))
+		}
+		if strings.HasPrefix(line, "password") {
+			os.Setenv("MYSQL_PASSWORD", strings.TrimSpace(line[9:]))
+		}
+	}
+}
+
+
+ cat ~/.my.cnf
+[primary]
+user=dba_util
+password=xxxx
+host=10.8.0.152
+[replica]
+user=dba_util
+password=xxxx
+host=10.8.0.153
+[etlreplica]
+user=dba_util
+password=xxxx
+host=10.8.0.154
 
 ```
 
@@ -71,12 +114,35 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 The Errant Transaction was resolved. You will still need to sync your data.
 ```
 
+## Tools Used for Data validation:
+- [Data-Diff](https://github.com/datafold/data-diff)
 
-Tools Used for Data validation:
-```Go
-https://github.com/datafold/data-diff
-```
 
+
+
+## Working on adding some more functionality to this Go App to make it more useful.
+- Added code and the logic to check for Errant Transactions.
+- Added a -fix flag to fix the errant transaction.
+- Currently this only applies a dummy transaction to the Primary and that is replicated to the Replica's to fix the errant transaction.
+
+
+
+
+## Screenshots
+
+<img src="screenshots/Check_GTIDs.png" width="619" height="173" />
+
+
+
+
+
+
+
+
+
+
+
+<img src="screenshots/Fix_GTIDs.png" width="634" height="275" />
 
 ```Go
 To build:
