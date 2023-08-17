@@ -2,7 +2,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -20,7 +19,7 @@ var (
 
 // read the ~/.my.cnf file to get the database credentials
 func readMyCnf() {
-	file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
+	file, err := os.ReadFile(os.Getenv("HOME") + "/.my.cnf")
 	if err != nil {
 		log.Fatal(err)
 	}
