@@ -209,6 +209,7 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 	var targetGtidSet string
 	var errantTransactions string
 	var sourceUUID, targetUUID string
+	//var binaryLogFile string
 
 	// connect to the source and target Host(s) database and run the query to get the SELECT @@server_uuid value
 	err := db1.QueryRow("SELECT @@server_uuid").Scan(&sourceUUID)
@@ -249,10 +250,39 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 			log.Fatal(err)
 		}
 		if errantTransactions == "" {
-			fmt.Println(green("[+]"), "Errant Transactions:", errantTransactions)
+			fmt.Println(green("[+]"), "No Errant Transactions:", errantTransactions)
 		} else {
 			fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
 
+		}
+		if errantTransactions != "" {
+			// New code to get the current binary log file name and executed GTID set - Kurt Larsen 2023-08-20
+			// use SHOW MASTER STATUS to get the name of the most recent binary log file and the executed GTID set
+			var logName string
+			var pos int
+			var Binlog_Do_DB string
+			var Binlog_Ignore_DB string
+			var executedGtidSet string
+			err = db2.QueryRow("SHOW MASTER STATUS").Scan(&logName, &pos, &Binlog_Do_DB, &Binlog_Ignore_DB, &executedGtidSet)
+			if err != nil {
+				log.Fatal(err)
+			}
+			err = db2.Ping()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// fmt.Println(red("[-]"), "Errant Transaction Found in Log Name:", logName)
+			//fmt.Println("Executed GTID Set:", executedGtidSet)
+
+			// use regexp to search for the errant transactions in the executed GTID set
+			re := regexp.MustCompile(errantTransactions)
+			if re.MatchString(executedGtidSet) {
+				//fmt.Println("Executed GTID Set:", executedGtidSet)
+				fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
+				//} else {
+				//fmt.Println(green("[+]"), "No Errant Transaction Found in Log Name:", logName)
+			}
 		}
 		/*
 			// function to explode the errant transactions and print them out, then apply them to the source database to replicate the errant transactions down to the target Host(s)

@@ -144,6 +144,33 @@ The Errant Transaction was resolved. You will still need to sync your data.
 
 <img src="screenshots/Fix_GTIDs.png" width="634" height="275" />
 
+
+
+
+## Added a show me which binlog file by name has the errant transaction(s) by default.
+
+<img src="screenshots/Gtids_binlog.png" width="619" height="173" />
+
+
+
+
+
+
+
+
+<img src="screenshots/Gtids_check_binlog.png" width="634" height="275" />
+
+
+
+
+
+
+
+
+<img src="screenshots/Gtids_fix_check.png" width="634" height="275" />
+
+
+
 ```Go
 To build:
 
