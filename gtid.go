@@ -45,35 +45,35 @@ func NewOracleGtidSetEntry(gtidRangeString string) (*OracleGtidSetEntry, error) 
 	gtidRangeString = strings.TrimSpace(gtidRangeString)
 	tokens := strings.SplitN(gtidRangeString, ":", 2)
 	if len(tokens) != 2 {
-		return nil, fmt.Errorf("Cannot parse OracleGtidSetEntry from %s", gtidRangeString)
+		return nil, fmt.Errorf("cannot parse OracleGtidSetEntry from %s", gtidRangeString)
 	}
 	if tokens[0] == "" {
-		return nil, fmt.Errorf("Unexpected UUID: %s", tokens[0])
+		return nil, fmt.Errorf("unexpected UUID: %s", tokens[0])
 	}
 	if tokens[1] == "" {
-		return nil, fmt.Errorf("Unexpected GTID range: %s", tokens[1])
+		return nil, fmt.Errorf("unexpected GTID range: %s", tokens[1])
 	}
 	gtidRange := &OracleGtidSetEntry{UUID: tokens[0], Ranges: tokens[1]}
 	return gtidRange, nil
 }
 
 // String returns a user-friendly string representation of this entry
-func (this *OracleGtidSetEntry) String() string {
-	return fmt.Sprintf("%s:%s", this.UUID, this.Ranges)
+func (oge *OracleGtidSetEntry) String() string {
+	return fmt.Sprintf("%s:%s", oge.UUID, oge.Ranges)
 }
 
 // String returns a user-friendly string representation of this entry
-func (this *OracleGtidSetEntry) Explode() (result [](*OracleGtidSetEntry)) {
-	intervals := strings.Split(this.Ranges, ":")
+func (oge *OracleGtidSetEntry) Explode() (result [](*OracleGtidSetEntry)) {
+	intervals := strings.Split(oge.Ranges, ":")
 	for _, interval := range intervals {
 		if submatch := multiValueInterval.FindStringSubmatch(interval); submatch != nil {
 			intervalStart, _ := strconv.Atoi(submatch[1])
 			intervalEnd, _ := strconv.Atoi(submatch[2])
 			for i := intervalStart; i <= intervalEnd; i++ {
-				result = append(result, &OracleGtidSetEntry{UUID: this.UUID, Ranges: fmt.Sprintf("%d", i)})
+				result = append(result, &OracleGtidSetEntry{UUID: oge.UUID, Ranges: fmt.Sprintf("%d", i)})
 			}
 		} else if submatch := singleValueInterval.FindStringSubmatch(interval); submatch != nil {
-			result = append(result, &OracleGtidSetEntry{UUID: this.UUID, Ranges: interval})
+			result = append(result, &OracleGtidSetEntry{UUID: oge.UUID, Ranges: interval})
 		}
 	}
 	return result
@@ -128,9 +128,9 @@ func NewOracleGtidSet(gtidSet string) (res *OracleGtidSet, err error) {
 // RemoveUUID removes entries that belong to given UUID.
 // By way of how this works there can only be one entry matching our UUID, but we generalize.
 // We keep order of entries.
-func (this *OracleGtidSet) RemoveUUID(uuid string) (removed bool) {
+func (ogs *OracleGtidSet) RemoveUUID(uuid string) (removed bool) {
 	filteredEntries := [](*OracleGtidSetEntry){}
-	for _, entry := range this.GtidEntries {
+	for _, entry := range ogs.GtidEntries {
 		if entry.UUID == uuid {
 			removed = true
 		} else {
@@ -138,24 +138,24 @@ func (this *OracleGtidSet) RemoveUUID(uuid string) (removed bool) {
 		}
 	}
 	if removed {
-		this.GtidEntries = filteredEntries
+		ogs.GtidEntries = filteredEntries
 	}
 	return removed
 }
 
 // RetainUUID retains only entries that belong to given UUID.
-func (this *OracleGtidSet) RetainUUID(uuid string) (anythingRemoved bool) {
-	return this.RetainUUIDs([]string{uuid})
+func (ogs *OracleGtidSet) RetainUUID(uuid string) (anythingRemoved bool) {
+	return ogs.RetainUUIDs([]string{uuid})
 }
 
 // RetainUUIDs retains only entries that belong to given UUIDs.
-func (this *OracleGtidSet) RetainUUIDs(uuids []string) (anythingRemoved bool) {
+func (ogs *OracleGtidSet) RetainUUIDs(uuids []string) (anythingRemoved bool) {
 	retainUUIDs := map[string]bool{}
 	for _, uuid := range uuids {
 		retainUUIDs[uuid] = true
 	}
 	filteredEntries := [](*OracleGtidSetEntry){}
-	for _, entry := range this.GtidEntries {
+	for _, entry := range ogs.GtidEntries {
 		if retainUUIDs[entry.UUID] {
 			filteredEntries = append(filteredEntries, entry)
 		} else {
@@ -163,15 +163,15 @@ func (this *OracleGtidSet) RetainUUIDs(uuids []string) (anythingRemoved bool) {
 		}
 	}
 	if anythingRemoved {
-		this.GtidEntries = filteredEntries
+		ogs.GtidEntries = filteredEntries
 	}
 	return anythingRemoved
 }
 
 // SharedUUIDs returns UUIDs (range-less) that are shared between the two sets
-func (this *OracleGtidSet) SharedUUIDs(other *OracleGtidSet) (shared []string) {
+func (ogs *OracleGtidSet) SharedUUIDs(other *OracleGtidSet) (shared []string) {
 	thisUUIDs := map[string]bool{}
-	for _, entry := range this.GtidEntries {
+	for _, entry := range ogs.GtidEntries {
 		thisUUIDs[entry.UUID] = true
 	}
 	for _, entry := range other.GtidEntries {
@@ -183,23 +183,23 @@ func (this *OracleGtidSet) SharedUUIDs(other *OracleGtidSet) (shared []string) {
 }
 
 // String returns a user-friendly string representation of this entry
-func (this *OracleGtidSet) Explode() (result [](*OracleGtidSetEntry)) {
-	for _, entries := range this.GtidEntries {
+func (ogs *OracleGtidSet) Explode() (result [](*OracleGtidSetEntry)) {
+	for _, entries := range ogs.GtidEntries {
 		result = append(result, entries.Explode()...)
 	}
 	return result
 }
 
-func (this *OracleGtidSet) String() string {
+func (ogs *OracleGtidSet) String() string {
 	tokens := []string{}
-	for _, entry := range this.GtidEntries {
+	for _, entry := range ogs.GtidEntries {
 		tokens = append(tokens, entry.String())
 	}
 	return strings.Join(tokens, ",")
 }
 
-func (this *OracleGtidSet) IsEmpty() bool {
-	return len(this.GtidEntries) == 0
+func (ogs *OracleGtidSet) IsEmpty() bool {
+	return len(ogs.GtidEntries) == 0
 }
 
 // My code starts here - Kurt Larsen - 2023-31-07
@@ -209,6 +209,7 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 	var targetGtidSet string
 	var errantTransactions string
 	var sourceUUID, targetUUID string
+	//var binaryLogFile string
 
 	// connect to the source and target Host(s) database and run the query to get the SELECT @@server_uuid value
 	err := db1.QueryRow("SELECT @@server_uuid").Scan(&sourceUUID)
@@ -249,10 +250,39 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 			log.Fatal(err)
 		}
 		if errantTransactions == "" {
-			fmt.Println(green("[+]"), "Errant Transactions:", errantTransactions)
+			fmt.Println(green("[+]"), "No Errant Transactions:", errantTransactions)
 		} else {
 			fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
 
+		}
+		if errantTransactions != "" {
+			// New code to get the current binary log file name and executed GTID set - Kurt Larsen 2023-08-20
+			// use SHOW MASTER STATUS to get the name of the most recent binary log file and the executed GTID set
+			var logName string
+			var pos int
+			var Binlog_Do_DB string
+			var Binlog_Ignore_DB string
+			var executedGtidSet string
+			err = db2.QueryRow("SHOW MASTER STATUS").Scan(&logName, &pos, &Binlog_Do_DB, &Binlog_Ignore_DB, &executedGtidSet)
+			if err != nil {
+				log.Fatal(err)
+			}
+			err = db2.Ping()
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// fmt.Println(red("[-]"), "Errant Transaction Found in Log Name:", logName)
+			//fmt.Println("Executed GTID Set:", executedGtidSet)
+
+			// use regexp to search for the errant transactions in the executed GTID set
+			re := regexp.MustCompile(errantTransactions)
+			if re.MatchString(executedGtidSet) {
+				//fmt.Println("Executed GTID Set:", executedGtidSet)
+				fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
+				//} else {
+				//fmt.Println(green("[+]"), "No Errant Transaction Found in Log Name:", logName)
+			}
 		}
 		/*
 			// function to explode the errant transactions and print them out, then apply them to the source database to replicate the errant transactions down to the target Host(s)
