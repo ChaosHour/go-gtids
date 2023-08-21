@@ -271,19 +271,29 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 			if err != nil {
 				log.Fatal(err)
 			}
-
-			// fmt.Println(red("[-]"), "Errant Transaction Found in Log Name:", logName)
+			//fmt.Println(red("[-]"), "Errant Transaction Found in Log Name:", logName)
 			//fmt.Println("Executed GTID Set:", executedGtidSet)
+			//fmt.Println("Errant Transaction:", errantTransactions)
 
-			// use regexp to search for the errant transactions in the executed GTID set
-			re := regexp.MustCompile(errantTransactions)
-			if re.MatchString(executedGtidSet) {
-				//fmt.Println("Executed GTID Set:", executedGtidSet)
-				fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
-				//} else {
-				//fmt.Println(green("[+]"), "No Errant Transaction Found in Log Name:", logName)
+			/*
+				// use regexp to search for the errant transactions in the executed GTID set
+				re := regexp.MustCompile(errantTransactions)
+				if re.MatchString(executedGtidSet) {
+					//fmt.Println("Executed GTID Set:", executedGtidSet)
+					fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
+					//} else {
+					//fmt.Println(green("[+]"), "No Errant Transaction Found in Log Name:", logName)
+				}
+			*/
+			re := regexp.MustCompile("Errant Transactions: ([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}:[0-9]+)")
+			matches := re.FindStringSubmatch(executedGtidSet)
+			if len(matches) > 0 {
+				errantTransactions = matches[1]
 			}
+			fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
+
 		}
+
 		/*
 			// function to explode the errant transactions and print them out, then apply them to the source database to replicate the errant transactions down to the target Host(s)
 			gtidSet := errantTransactions
