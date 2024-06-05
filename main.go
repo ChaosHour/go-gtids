@@ -35,6 +35,8 @@ func printHelp() {
 
 // main function
 func main() {
+	color.NoColor = false // Force color output.
+
 	if *help {
 		printHelp()
 		os.Exit(0)
