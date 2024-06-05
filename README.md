@@ -204,3 +204,99 @@ docker run --network mysql57-docker-gtids_db-network pt-slave-restart -h 172.25.
 docker run --network mysql57-docker-gtids_db-network pt-slave-restart --master-uuid b33e4e58-21de-11ef-a136-0242ac190003 -h 172.25.0.2
 
 ```
+
+
+
+
+## Test using go-gtids and pt-slave-restart
+
+```bash
+Replication borked on purpose ...
+
+              Last_SQL_Errno: 1007
+               Last_SQL_Error: Error 'Can't create database 'chaos'; database exists' on query. Default database: 'chaos'. Query: 'create database `chaos`'
+  Replicate_Ignore_Server_Ids:
+             Master_Server_Id: 1
+                  Master_UUID: b33e4e58-21de-11ef-a136-0242ac190003
+             Master_Info_File: mysql.slave_master_info
+                    SQL_Delay: 0
+          SQL_Remaining_Delay: NULL
+      Slave_SQL_Running_State:
+           Master_Retry_Count: 86400
+                  Master_Bind:
+      Last_IO_Error_Timestamp:
+     Last_SQL_Error_Timestamp: 240604 15:48:53
+               Master_SSL_Crl:
+           Master_SSL_Crlpath:
+           Retrieved_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-5967,
+ec45394f-21de-11ef-a23d-0242ac190002:5-7
+            Executed_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-3976,
+ec45394f-21de-11ef-a23d-0242ac190002:1-7
+                Auto_Position: 1
+
+
+
+
+
+Does not register as an Errant transaction, hmm:
+
+docker run --network mysql57-docker-gtids_db-network go-gtids -s 172.25.0.3 -t 172.25.0.2
+[+] Source -> 172.25.0.3 gtid_executed: b33e4e58-21de-11ef-a136-0242ac190003:1-5967,
+ec45394f-21de-11ef-a23d-0242ac190002:1-7
+[+] server_uuid: b33e4e58-21de-11ef-a136-0242ac190003
+[+] Target -> 172.25.0.2 gtid_executed: b33e4e58-21de-11ef-a136-0242ac190003:1-3976,
+ec45394f-21de-11ef-a23d-0242ac190002:1-7
+[+] server_uuid: ec45394f-21de-11ef-a23d-0242ac190002
+[+] No Errant Transactions:
+
+
+
+
+mysql --defaults-group-suffix=_replica1 -e "show slave status\G" | awk -v RS='\n ' '
+{
+    if ($1 ~ /Master_Host|Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master|Retrieved_Gtid_Set|Executed_Gtid_Set/) {
+        split($0, a, ": ");
+        print a[1] ": " substr($0, index($0, a[2]));
+    }
+}'
+                 Master_Host: 172.25.0.3
+            Slave_IO_Running: Yes
+           Slave_SQL_Running: No
+       Seconds_Behind_Master: NULL
+Master_SSL_Verify_Server_Cert: No
+     Slave_SQL_Running_State:      Slave_SQL_Running_State:
+          Retrieved_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-5967,
+ec45394f-21de-11ef-a23d-0242ac190002:5-7
+           Executed_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-3976,
+ec45394f-21de-11ef-a23d-0242ac190002:1-7
+
+
+
+
+
+Do you have to set --master-uuid? No it still worked without adding that argument.
+
+docker run --network mysql57-docker-gtids_db-network pt-slave-restart --master-uuid b33e4e58-21de-11ef-a136-0242ac190003 -h 172.25.0.2
+2024-06-04T16:15:06 h=172.25.0.2 relay-log-bin.000005         658 1007
+
+
+
+
+mysql --defaults-group-suffix=_replica1 -e "show slave status\G" | awk -v RS='\n ' '
+{
+    if ($1 ~ /Master_Host|Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master|Retrieved_Gtid_Set|Executed_Gtid_Set/) {
+        split($0, a, ": ");
+        print a[1] ": " substr($0, index($0, a[2]));
+    }
+}'
+                 Master_Host: 172.25.0.3
+            Slave_IO_Running: Yes
+           Slave_SQL_Running: Yes
+       Seconds_Behind_Master: 28684
+Master_SSL_Verify_Server_Cert: No
+     Slave_SQL_Running_State: creating table
+          Retrieved_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-5967,
+ec45394f-21de-11ef-a23d-0242ac190002:5-7
+           Executed_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-4856,
+ec45394f-21de-11ef-a23d-0242ac190002:1-7
+```
