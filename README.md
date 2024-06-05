@@ -42,6 +42,7 @@ func readMyCnf() {
 }
 
 
+
  cat ~/.my.cnf
 [primary]
 user=dba_util
@@ -51,11 +52,6 @@ host=10.8.0.152
 user=dba_util
 password=xxxx
 host=10.8.0.153
-[etlreplica]
-user=dba_util
-password=xxxx
-host=10.8.0.154
-
 ```
 
 
@@ -184,4 +180,27 @@ env GOOS=darwin GOARCH=amd64 go build .
 
 Linux:
 env GOOS=linux GOARCH=amd64 go build .
+```
+
+
+## I added a couple of Dockerfiles and a Makefile to help build for testing.
+
+```bash
+make all
+
+docker run --network mysql57-docker-gtids_db-network go-gtids -s 172.25.0.3 -t 172.25.0.2
+[+] Source -> 172.25.0.3 gtid_executed: 874d7e24-2292-11ef-bc48-0242ac190003:1-3966,
+c04d4193-2292-11ef-bcdd-0242ac190002:1-4
+[+] server_uuid: 874d7e24-2292-11ef-bc48-0242ac190003
+[+] Target -> 172.25.0.2 gtid_executed: 874d7e24-2292-11ef-bc48-0242ac190003:1-3966,
+c04d4193-2292-11ef-bcdd-0242ac190002:1-4
+[+] server_uuid: c04d4193-2292-11ef-bcdd-0242ac190002
+[+] No Errant Transactions:
+
+
+
+docker run --network mysql57-docker-gtids_db-network pt-slave-restart -h 172.25.0.2
+
+docker run --network mysql57-docker-gtids_db-network pt-slave-restart --master-uuid b33e4e58-21de-11ef-a136-0242ac190003 -h 172.25.0.2
+
 ```
