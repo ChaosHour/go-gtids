@@ -208,7 +208,6 @@ func (ogs *OracleGtidSet) IsEmpty() bool {
 	return len(ogs.GtidEntries) == 0
 }
 
-// My code starts here - Kurt Larsen - 2023-31-07
 // function to check the GTID set subset issue and fix it if the -fix flag is set
 func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool) {
 	var sourceGtidSet string
