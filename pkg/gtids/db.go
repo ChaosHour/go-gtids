@@ -1,10 +1,11 @@
 package gtids
 
 import (
-	"database/sql"
 	"log"
 	"os"
 	"strings"
+
+	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -15,6 +16,7 @@ var (
 	Err error
 )
 
+// ReadMyCnf reads the ~/.my.cnf file to get the database credentials
 func ReadMyCnf() {
 	file, err := os.ReadFile(os.Getenv("HOME") + "/.my.cnf")
 	if err != nil {
@@ -31,6 +33,7 @@ func ReadMyCnf() {
 	}
 }
 
+// ConnectToDatabase connects to the source and target Host(s) database at the same time.
 func ConnectToDatabase(source string, target string) {
 	Db1, Err = sql.Open("mysql", os.Getenv("MYSQL_USER")+":"+os.Getenv("MYSQL_PASSWORD")+"@tcp("+source+":3306)/mysql")
 	if Err != nil {
