@@ -1,7 +1,9 @@
 # go-gtids
+
 A Go App To Check For Errant Transactions
 
 ## Usage
+
 ```Go
 ./go-gtids -h
 Usage: go-gtids -s <source> -t <target> [-fix]
@@ -18,32 +20,30 @@ Usage: go-gtids -s <source> -t <target> [-fix]
 
 ```
 
-
-
 ## Credentials
+
 ```Go
 The credentials are stored in the ~/.my.cnf file in the users home directory and are read by the app.
 
 // read the ~/.my.cnf file to get the database credentials
 func readMyCnf() {
-	file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
-	if err != nil {
-		log.Fatal(err)
-	}
-	lines := strings.Split(string(file), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "user") {
-			os.Setenv("MYSQL_USER", strings.TrimSpace(line[5:]))
-		}
-		if strings.HasPrefix(line, "password") {
-			os.Setenv("MYSQL_PASSWORD", strings.TrimSpace(line[9:]))
-		}
-	}
+    file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
+    if err != nil {
+        log.Fatal(err)
+}
+    lines := strings.Split(string(file), "\n")
+    for _, line := range lines {
+        if strings.HasPrefix(line, "user") {
+             os.Setenv("MYSQL_USER", strings.TrimSpace(line[5:]))
+        }
+        if strings.HasPrefix(line, "password") {
+             os.Setenv("MYSQL_PASSWORD", strings.TrimSpace(line[9:]))
+        }
+    }
 }
 
 
-
- cat ~/.my.cnf
+cat ~/.my.cnf
 [primary]
 user=dba_util
 password=xxxx
@@ -54,8 +54,8 @@ password=xxxx
 host=10.8.0.153
 ```
 
-
 ## Example
+
 ```Go
 Testing MySQL 8 & GTID's
 
@@ -110,62 +110,29 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 The Errant Transaction was resolved. You will still need to sync your data.
 ```
 
-## Tools Used for Data validation:
+## Tools Used for Data validation
+
 - [Data-Diff](https://github.com/datafold/data-diff)
 
+## Working on adding some more functionality to this Go App to make it more useful
 
-
-
-## Working on adding some more functionality to this Go App to make it more useful.
 - Added code and the logic to check for Errant Transactions.
 - Added a -fix flag to fix the errant transaction.
 - Currently this only applies a dummy transaction to the Primary and that is replicated to the Replica's to fix the errant transaction.
 
-
-
-
 ## Screenshots
 
-<img src="screenshots/Check_GTIDs.png" width="619" height="173" />
+![Check GTIDs screenshot](screenshots/Check_GTIDs.png)
 
+![Fix GTIDs screenshot](screenshots/Fix_GTIDs.png)
 
+## Added a show me which binlog file by name has the errant transaction(s) by default
 
+![GTIDs binlog screenshot](screenshots/Gtids_binlog.png)
 
+![GTIDs check binlog screenshot](screenshots/Gtids_check_binlog.png)
 
-
-
-
-
-
-
-<img src="screenshots/Fix_GTIDs.png" width="634" height="275" />
-
-
-
-
-## Added a show me which binlog file by name has the errant transaction(s) by default.
-
-<img src="screenshots/Gtids_binlog.png" width="575" height="142" />
-
-
-
-
-
-
-
-
-<img src="screenshots/Gtids_check_binlog.png" width="673" height="305" />
-
-
-
-
-
-
-
-
-<img src="screenshots/Gtids_fix_check.png" width="614" height="343" />
-
-
+![GTIDs fix check screenshot](screenshots/Gtids_fix_check.png)
 
 ```Go
 To build:
@@ -182,8 +149,7 @@ Linux:
 env GOOS=linux GOARCH=amd64 go build .
 ```
 
-
-## I added a couple of Dockerfiles and a Makefile to help build for testing.
+## I added a couple of Dockerfiles and a Makefile to help build for testing
 
 ```bash
 make all
@@ -204,9 +170,6 @@ docker run --network mysql57-docker-gtids_db-network pt-slave-restart -h 172.25.
 docker run --network mysql57-docker-gtids_db-network pt-slave-restart --master-uuid b33e4e58-21de-11ef-a136-0242ac190003 -h 172.25.0.2
 
 ```
-
-
-
 
 ## Test using go-gtids and pt-slave-restart
 
