@@ -1,4 +1,4 @@
-.PHONY: build-go build-docker-go build-docker-pt all
+.PHONY: build-go build-docker-go build-docker-pt all clean
 
 build-go:
 	@mkdir -p bin
@@ -14,3 +14,7 @@ build-docker-pt:
 	@docker build -t pt-slave-restart -f Dockerfile.pt-slave-restart .
 
 all: build-docker-go build-docker-pt
+
+clean:
+	@echo "Cleaning go binaries..."
+	@rm -rf bin/go-gtids-macos bin/go-gtids-linux
