@@ -52,3 +52,23 @@ func ConnectToDatabase(source string, target string) {
 		log.Fatal(Err)
 	}
 }
+
+// ConnectToDatabaseWithPort connects to the source and target Host(s) database with custom ports.
+func ConnectToDatabaseWithPort(source string, sourcePort string, target string, targetPort string) {
+	Db1, Err = sql.Open("mysql", os.Getenv("MYSQL_USER")+":"+os.Getenv("MYSQL_PASSWORD")+"@tcp("+source+":"+sourcePort+")/mysql")
+	if Err != nil {
+		log.Fatal(Err)
+	}
+	Err = Db1.Ping()
+	if Err != nil {
+		log.Fatal(Err)
+	}
+	Db2, Err = sql.Open("mysql", os.Getenv("MYSQL_USER")+":"+os.Getenv("MYSQL_PASSWORD")+"@tcp("+target+":"+targetPort+")/mysql")
+	if Err != nil {
+		log.Fatal(Err)
+	}
+	Err = Db2.Ping()
+	if Err != nil {
+		log.Fatal(Err)
+	}
+}
