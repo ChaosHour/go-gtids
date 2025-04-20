@@ -5,10 +5,10 @@ A Go App To Check For Errant Transactions
 ## Usage
 
 ```Go
-./bin/go-gtids-macos -h
+./bin/go-gtids -h
 Usage: go-gtids -s <source> -t <target> [-source-port <port>] [-target-port <port>] [-fix]
 
-./bin/go-gtids-macos -help
+./bin/go-gtids -help
 Usage of ./bin/go-gtids-macos:
   -fix
         fix the GTID set subset issue
