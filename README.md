@@ -5,18 +5,22 @@ A Go App To Check For Errant Transactions
 ## Usage
 
 ```Go
-./go-gtids -h
-Usage: go-gtids -s <source> -t <target> [-fix]
+./bin/go-gtids-macos -h
+Usage: go-gtids -s <source> -t <target> [-source-port <port>] [-target-port <port>] [-fix]
 
-
-./go-gtids -help
- -fix
+./bin/go-gtids-macos -help
+Usage of ./bin/go-gtids-macos:
+  -fix
         fix the GTID set subset issue
   -h    Print help
   -s string
         Source Host
+  -source-port string
+        Source MySQL port (default "3306")
   -t string
         Target Host
+  -target-port string
+        Target MySQL port (default "3306")
 
 ```
 
@@ -43,15 +47,19 @@ func readMyCnf() {
 }
 
 
+
 cat ~/.my.cnf
-[primary]
-user=dba_util
-password=xxxx
-host=10.8.0.152
-[replica]
-user=dba_util
-password=xxxx
-host=10.8.0.153
+[client]
+user=root
+password=s3cr3t
+
+[client_primary1]
+host=192.168.50.50
+port=3306
+
+[client_replica1]
+host=192.168.50.50
+port=3307
 ```
 
 ## Example
@@ -262,4 +270,66 @@ Master_SSL_Verify_Server_Cert: No
 ec45394f-21de-11ef-a23d-0242ac190002:5-7
            Executed_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-4856,
 ec45394f-21de-11ef-a23d-0242ac190002:1-7
+```
+
+## Example with Errant Transactions in a Docker Container
+
+```Go
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[-] Errant Transactions: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[-] Errant Transaction Found in Log Name: binlog.000002
+
+
+
+mysql --defaults-group-suffix=_replica1 -e "show slave status\G" | awk -v RS='\n ' '
+{
+    if ($1 ~ /Master_Host|Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master|Retrieved_Gtid_Set|Executed_Gtid_Set/) {
+        split($0, a, ": ");
+        print a[1] ": " substr($0, index($0, a[2]));
+    }
+}'
+                 Master_Host: 172.20.0.3
+            Slave_IO_Running: Yes
+           Slave_SQL_Running: Yes
+       Seconds_Behind_Master: 0
+Master_SSL_Verify_Server_Cert: No
+     Slave_SQL_Running_State: Replica has read all relay log; waiting for more updates
+          Retrieved_Gtid_Set: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+           Executed_Gtid_Set: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307 -fix
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[-] Errant Transactions: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[-] Errant Transaction Found in Log Name: binlog.000002
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:2
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:3
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:4
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:5
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:6
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:7
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:8
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:9
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:10
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:11
+
+
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[+] No Errant Transactions: 
 ```
