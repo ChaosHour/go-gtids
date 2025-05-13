@@ -1,61 +1,69 @@
 # go-gtids
+
 A Go App To Check For Errant Transactions
 
 ## Usage
+
 ```Go
-./go-gtids -h
-Usage: go-gtids -s <source> -t <target> [-fix]
+./bin/go-gtids -h
+Usage: go-gtids -s <source> -t <target> [-source-port <port>] [-target-port <port>] [-fix]
 
-
-./go-gtids -help
- -fix
+./bin/go-gtids -help
+Usage of ./bin/go-gtids-macos:
+  -fix
         fix the GTID set subset issue
   -h    Print help
   -s string
         Source Host
+  -source-port string
+        Source MySQL port (default "3306")
   -t string
         Target Host
+  -target-port string
+        Target MySQL port (default "3306")
 
 ```
 
-
-
 ## Credentials
+
 ```Go
 The credentials are stored in the ~/.my.cnf file in the users home directory and are read by the app.
 
 // read the ~/.my.cnf file to get the database credentials
 func readMyCnf() {
-	file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
-	if err != nil {
-		log.Fatal(err)
-	}
-	lines := strings.Split(string(file), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "user") {
-			os.Setenv("MYSQL_USER", strings.TrimSpace(line[5:]))
-		}
-		if strings.HasPrefix(line, "password") {
-			os.Setenv("MYSQL_PASSWORD", strings.TrimSpace(line[9:]))
-		}
-	}
+    file, err := ioutil.ReadFile(os.Getenv("HOME") + "/.my.cnf")
+    if err != nil {
+        log.Fatal(err)
+}
+    lines := strings.Split(string(file), "\n")
+    for _, line := range lines {
+        if strings.HasPrefix(line, "user") {
+             os.Setenv("MYSQL_USER", strings.TrimSpace(line[5:]))
+        }
+        if strings.HasPrefix(line, "password") {
+             os.Setenv("MYSQL_PASSWORD", strings.TrimSpace(line[9:]))
+        }
+    }
 }
 
 
 
- cat ~/.my.cnf
-[primary]
-user=dba_util
-password=xxxx
-host=10.8.0.152
-[replica]
-user=dba_util
-password=xxxx
-host=10.8.0.153
+cat ~/.my.cnf
+[client]
+user=root
+password=s3cr3t
+
+[client_primary1]
+host=192.168.50.50
+port=3306
+
+[client_replica1]
+host=192.168.50.50
+port=3307
 ```
 
-
 ## Example
+
 ```Go
 Testing MySQL 8 & GTID's
 
@@ -110,62 +118,29 @@ mysql://dba:xxxxx@10.5.0.153:3306/book million_words
 The Errant Transaction was resolved. You will still need to sync your data.
 ```
 
-## Tools Used for Data validation:
+## Tools Used for Data validation
+
 - [Data-Diff](https://github.com/datafold/data-diff)
 
+## Working on adding some more functionality to this Go App to make it more useful
 
-
-
-## Working on adding some more functionality to this Go App to make it more useful.
 - Added code and the logic to check for Errant Transactions.
 - Added a -fix flag to fix the errant transaction.
 - Currently this only applies a dummy transaction to the Primary and that is replicated to the Replica's to fix the errant transaction.
 
-
-
-
 ## Screenshots
 
-<img src="screenshots/Check_GTIDs.png" width="619" height="173" />
+![Check GTIDs screenshot](screenshots/Check_GTIDs.png)
 
+![Fix GTIDs screenshot](screenshots/Fix_GTIDs.png)
 
+## Added a show me which binlog file by name has the errant transaction(s) by default
 
+![GTIDs binlog screenshot](screenshots/Gtids_binlog.png)
 
+![GTIDs check binlog screenshot](screenshots/Gtids_check_binlog.png)
 
-
-
-
-
-
-
-<img src="screenshots/Fix_GTIDs.png" width="634" height="275" />
-
-
-
-
-## Added a show me which binlog file by name has the errant transaction(s) by default.
-
-<img src="screenshots/Gtids_binlog.png" width="575" height="142" />
-
-
-
-
-
-
-
-
-<img src="screenshots/Gtids_check_binlog.png" width="673" height="305" />
-
-
-
-
-
-
-
-
-<img src="screenshots/Gtids_fix_check.png" width="614" height="343" />
-
-
+![GTIDs fix check screenshot](screenshots/Gtids_fix_check.png)
 
 ```Go
 To build:
@@ -182,8 +157,7 @@ Linux:
 env GOOS=linux GOARCH=amd64 go build .
 ```
 
-
-## I added a couple of Dockerfiles and a Makefile to help build for testing.
+## I added a couple of Dockerfiles and a Makefile to help build for testing
 
 ```bash
 make all
@@ -204,9 +178,6 @@ docker run --network mysql57-docker-gtids_db-network pt-slave-restart -h 172.25.
 docker run --network mysql57-docker-gtids_db-network pt-slave-restart --master-uuid b33e4e58-21de-11ef-a136-0242ac190003 -h 172.25.0.2
 
 ```
-
-
-
 
 ## Test using go-gtids and pt-slave-restart
 
@@ -299,4 +270,66 @@ Master_SSL_Verify_Server_Cert: No
 ec45394f-21de-11ef-a23d-0242ac190002:5-7
            Executed_Gtid_Set: b33e4e58-21de-11ef-a136-0242ac190003:1-4856,
 ec45394f-21de-11ef-a23d-0242ac190002:1-7
+```
+
+## Example with Errant Transactions in a Docker Container
+
+```Go
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[-] Errant Transactions: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[-] Errant Transaction Found in Log Name: binlog.000002
+
+
+
+mysql --defaults-group-suffix=_replica1 -e "show slave status\G" | awk -v RS='\n ' '
+{
+    if ($1 ~ /Master_Host|Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master|Retrieved_Gtid_Set|Executed_Gtid_Set/) {
+        split($0, a, ": ");
+        print a[1] ": " substr($0, index($0, a[2]));
+    }
+}'
+                 Master_Host: 172.20.0.3
+            Slave_IO_Running: Yes
+           Slave_SQL_Running: Yes
+       Seconds_Behind_Master: 0
+Master_SSL_Verify_Server_Cert: No
+     Slave_SQL_Running_State: Replica has read all relay log; waiting for more updates
+          Retrieved_Gtid_Set: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+           Executed_Gtid_Set: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307 -fix
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[-] Errant Transactions: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[-] Errant Transaction Found in Log Name: binlog.000002
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:1
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:2
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:3
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:4
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:5
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:6
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:7
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:8
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:9
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:10
+Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:11
+
+
+./bin/go-gtids -s 192.168.50.50 -source-port 3306 -t 192.168.50.50 -target-port 3307
+[+] Source -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc
+[+] Target -> 192.168.50.50 gtid_executed: 35dacfbe-1c26-11f0-ab3a-3eaa1b6dc9dc:1-39,
+35e31a1e-1c26-11f0-b708-f6db8cba6bab:1-11
+[+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
+[+] No Errant Transactions: 
 ```

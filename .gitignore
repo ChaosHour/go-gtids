@@ -16,3 +16,6 @@
 
 # text files
 *.txt
+
+# txt_files dir
+txt_files/

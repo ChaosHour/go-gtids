@@ -1,0 +1,38 @@
+name: Build Go Binaries
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+
+      - name: Build macOS binary
+        run: |
+          mkdir -p bin
+          GOOS=darwin GOARCH=amd64 go build -o bin/go-gtids-darwin-amd64 ./cmd/go-gtids
+
+      - name: Build Linux binary
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o bin/go-gtids-linux-amd64 ./cmd/go-gtids
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-gtids-darwin-amd64
+          path: bin/go-gtids-darwin-amd64
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-gtids-linux-amd64
+          path: bin/go-gtids-linux-amd64

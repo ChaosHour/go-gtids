@@ -1,5 +1,5 @@
 // gtid.go
-package main
+package gtids
 
 import (
 	"fmt"
@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"database/sql"
+
+	"github.com/fatih/color"
 )
 
 /*
@@ -31,6 +33,10 @@ import (
 var (
 	singleValueInterval = regexp.MustCompile("^([0-9]+)$")
 	multiValueInterval  = regexp.MustCompile("^([0-9]+)[-]([0-9]+)$")
+	green               = color.New(color.FgGreen).SprintFunc()
+	red                 = color.New(color.FgRed).SprintFunc()
+	yellow              = color.New(color.FgYellow).SprintFunc()
+	blue                = color.New(color.FgBlue).SprintFunc()
 )
 
 // OracleGtidSetEntry represents an entry in a set of GTID ranges,
@@ -202,9 +208,8 @@ func (ogs *OracleGtidSet) IsEmpty() bool {
 	return len(ogs.GtidEntries) == 0
 }
 
-// My code starts here - Kurt Larsen - 2023-31-07
 // function to check the GTID set subset issue and fix it if the -fix flag is set
-func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) {
+func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool) {
 	var sourceGtidSet string
 	var targetGtidSet string
 	var errantTransactions string
@@ -321,7 +326,7 @@ func checkGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string) 
 		for _, entry := range gtidEntries {
 			entries = append(entries, fmt.Sprintf("%s:%s", entry.UUID, entry.Ranges))
 		}
-		if *fix {
+		if fix {
 			// Apply the UUID and Ranges to the database
 			for _, entry := range entries {
 				//fmt.Printf("Applying entry: %s\n", entry)
