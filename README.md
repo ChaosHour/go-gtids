@@ -6,12 +6,14 @@ A Go App To Check For Errant Transactions
 
 ```Go
 ./bin/go-gtids -h
-Usage: go-gtids -s <source> -t <target> [-source-port <port>] [-target-port <port>] [-fix]
+Usage: go-gtids -s <source> -t <target> [-source-port <port>] [-target-port <port>] [-fix] [-fix-replica]
 
 ./bin/go-gtids -help
 Usage of ./bin/go-gtids-macos:
   -fix
-        fix the GTID set subset issue
+        fix the GTID set subset issue by applying to source
+  -fix-replica
+        fix the GTID set subset issue by applying to replica
   -h    Print help
   -s string
         Source Host
@@ -125,8 +127,9 @@ The Errant Transaction was resolved. You will still need to sync your data.
 ## Working on adding some more functionality to this Go App to make it more useful
 
 - Added code and the logic to check for Errant Transactions.
-- Added a -fix flag to fix the errant transaction.
-- Currently this only applies a dummy transaction to the Primary and that is replicated to the Replica's to fix the errant transaction.
+- Added a -fix flag to fix the errant transaction by applying dummy transactions to the Primary.
+- Added a -fix-replica flag to fix the errant transaction by applying dummy transactions directly to the Replica.
+- The -fix-replica method safely stops replication, disables binary logging, applies GTIDs, re-enables logging, and restarts replication.
 
 ## Screenshots
 

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"database/sql"
 
@@ -209,7 +210,7 @@ func (ogs *OracleGtidSet) IsEmpty() bool {
 }
 
 // function to check the GTID set subset issue and fix it if the -fix flag is set
-func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool) {
+func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool, fixReplica bool) {
 	var sourceGtidSet string
 	var targetGtidSet string
 	var errantTransactions string
@@ -259,10 +260,7 @@ func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, 
 		} else {
 			fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
 
-		}
-		if errantTransactions != "" {
-			// New code to get the current binary log file name and executed GTID set - Kurt Larsen 2023-08-20
-			// use SHOW MASTER STATUS to get the name of the most recent binary log file and the executed GTID set
+			// New code to get the current binary log file name and executed GTID set
 			var logName string
 			var pos int
 			var Binlog_Do_DB string
@@ -297,65 +295,291 @@ func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, 
 			}
 			fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
 
-		}
-
-		/*
-			// function to explode the errant transactions and print them out, then apply them to the source database to replicate the errant transactions down to the target Host(s)
+			// function to explode the errant transactions and print them out
 			gtidSet := errantTransactions
 			oracleGtidSet, err := NewOracleGtidSet(gtidSet)
 			if err != nil {
 				log.Fatal(err)
 			}
 
+			// Store UUID and Ranges in a slice
+			var entries []string
 			gtidEntries := oracleGtidSet.Explode()
 			for _, entry := range gtidEntries {
-				fmt.Printf("%s:%s\n", entry.UUID, entry.Ranges)
-			}
-		*/
-
-		// function to explode the errant transactions and print them out, then apply them to the source database to replicate the errant transactions down to the target Host(s)
-		gtidSet := errantTransactions
-		oracleGtidSet, err := NewOracleGtidSet(gtidSet)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Store UUID and Ranges in a slice
-		var entries []string
-		gtidEntries := oracleGtidSet.Explode()
-		for _, entry := range gtidEntries {
-			entries = append(entries, fmt.Sprintf("%s:%s", entry.UUID, entry.Ranges))
-		}
-		if fix {
-			// Apply the UUID and Ranges to the database
-			for _, entry := range entries {
-				//fmt.Printf("Applying entry: %s\n", entry)
-				// Apply the errant transaction
-				_, err := db1.Exec("SET GTID_NEXT='" + entry + "'")
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// execute a BEGIN statement
-				_, err = db1.Exec("BEGIN")
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// execute a COMMIT statement
-				_, err = db1.Exec("COMMIT")
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// set GTID_NEXT back to AUTOMATIC
-				_, err = db1.Exec("SET GTID_NEXT='AUTOMATIC'")
-				if err != nil {
-					log.Fatal(err)
-				}
-				fmt.Printf("Applied entry: %s\n", entry)
+				entries = append(entries, fmt.Sprintf("%s:%s", entry.UUID, entry.Ranges))
 			}
 
+			// Only attempt fixes if there are errant transactions AND fix flag is set
+			if (fix || fixReplica) && len(entries) > 0 {
+				// Apply the UUID and Ranges to the database
+				var targetDB *sql.DB
+				var fixLocation string
+				// Declare replication command variables at this scope level
+				var stopCmd, startCmd, statusCmd string
+
+				if fixReplica {
+					targetDB = db2
+					fixLocation = "replica"
+
+					// Debug output
+					fmt.Printf("Debug: fixReplica is true, will apply to replica\n")
+
+					// Stop replication before applying GTIDs
+					fmt.Printf("Stopping replication on %s...\n", fixLocation)
+
+					// Check MySQL version to determine correct STOP command
+					var version string
+					err := targetDB.QueryRow("SELECT VERSION()").Scan(&version)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					// MySQL 8.0.22+ uses STOP REPLICA, older versions use STOP SLAVE
+					if strings.Contains(version, "8.0") {
+						// Extract version number to check if >= 8.0.22
+						re := regexp.MustCompile(`8\.0\.(\d+)`)
+						matches := re.FindStringSubmatch(version)
+						if len(matches) > 1 {
+							if minorVersion, err := strconv.Atoi(matches[1]); err == nil && minorVersion >= 22 {
+								stopCmd = "STOP REPLICA"
+								startCmd = "START REPLICA"
+								statusCmd = "SHOW REPLICA STATUS"
+							} else {
+								stopCmd = "STOP SLAVE"
+								startCmd = "START SLAVE"
+								statusCmd = "SHOW SLAVE STATUS"
+							}
+						} else {
+							stopCmd = "STOP SLAVE"
+							startCmd = "START SLAVE"
+							statusCmd = "SHOW SLAVE STATUS"
+						}
+					} else {
+						stopCmd = "STOP SLAVE"
+						startCmd = "START SLAVE"
+						statusCmd = "SHOW SLAVE STATUS"
+					}
+
+					_, err = targetDB.Exec(stopCmd)
+					if err != nil {
+						log.Fatal(err)
+					}
+					fmt.Printf("Replication stopped on %s\n", fixLocation)
+
+					// Make sure binary logging is disabled for this session
+					fmt.Printf("Disabling binary logging on %s...\n", fixLocation)
+					_, err = targetDB.Exec("SET sql_log_bin = 0")
+					if err != nil {
+						log.Printf("Warning: Failed to disable binary logging: %v\n", err)
+						// Continue anyway, as this might be allowed in some setups
+					}
+				} else {
+					targetDB = db1
+					fixLocation = "source"
+					if fix {
+						fmt.Printf("Debug: fix is true, will apply to source\n")
+					} else {
+						fmt.Printf("Debug: Neither fix nor fixReplica is true\n")
+					}
+				}
+
+				fmt.Printf("Applying errant GTIDs to %s...\n", fixLocation)
+
+				// Actually disable binary logging AGAIN right before applying GTIDs if we're on replica
+				// This ensures it's disabled for THIS session even if the previous command failed
+				if fixReplica {
+					_, err := targetDB.Exec("SET SESSION sql_log_bin = 0")
+					if err != nil {
+						log.Printf("Warning: Failed to disable binary logging (retry): %v\n", err)
+					}
+				}
+
+				for _, entry := range entries {
+					_, err := targetDB.Exec("SET GTID_NEXT='" + entry + "'")
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = targetDB.Exec("BEGIN")
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = targetDB.Exec("COMMIT")
+					if err != nil {
+						log.Fatal(err)
+					}
+					_, err = targetDB.Exec("SET GTID_NEXT='AUTOMATIC'")
+					if err != nil {
+						log.Fatal(err)
+					}
+					fmt.Printf("Applied entry to %s: %s\n", fixLocation, entry)
+				}
+
+				if fixReplica {
+					// Re-enable binary logging
+					fmt.Printf("Re-enabling binary logging on %s...\n", fixLocation)
+					_, err = targetDB.Exec("SET sql_log_bin = 1")
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					// Start replication after applying GTIDs
+					fmt.Printf("Starting replication on %s...\n", fixLocation)
+					_, err = targetDB.Exec(startCmd)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					// Add a delay to allow replication to start up fully
+					fmt.Printf("Waiting for replication to initialize...\n")
+					time.Sleep(2 * time.Second)
+
+					// Verify replication is working
+					fmt.Printf("Verifying replication status on %s...\n", fixLocation)
+
+					// Try a simpler query first to verify connection is working
+					var testVar string
+					err = targetDB.QueryRow("SELECT @@version").Scan(&testVar)
+					if err != nil {
+						fmt.Printf("Debug: Error querying version: %v\n", err)
+					} else {
+						fmt.Printf("Debug: Connected to MySQL version: %s\n", testVar)
+					}
+
+					// Enhanced replication status reporting with more robust handling
+					var masterHost, retrievedGtidSet, executedGtidSet, sqlRunningState string
+					var ioRunning, sqlRunning string
+					var secondsBehind sql.NullInt64
+
+					// Get column data as a map for easier access
+					columns := make(map[string]string)
+
+					// Use SHOW SLAVE STATUS directly - works across all versions
+					fmt.Printf("Debug: Status command: %s\n", statusCmd)
+					rows, err := targetDB.Query(statusCmd)
+					if err != nil {
+						log.Fatal(err)
+					}
+					defer rows.Close()
+
+					if rows.Next() {
+						// Get column names
+						cols, err := rows.Columns()
+						if err != nil {
+							log.Fatal(err)
+						}
+
+						fmt.Printf("Debug: Found %d columns in status output\n", len(cols))
+						fmt.Printf("Debug: Column names: %v\n", cols)
+
+						// Create a slice of interface{} to hold the values
+						values := make([]interface{}, len(cols))
+						scanArgs := make([]interface{}, len(cols))
+						for i := range values {
+							scanArgs[i] = &values[i]
+						}
+
+						// Scan the result into the values slice
+						err = rows.Scan(scanArgs...)
+						if err != nil {
+							log.Fatal(err)
+						}
+
+						// Build a map of column name to string value
+						for i, colName := range cols {
+							var strVal string
+							val := values[i]
+
+							if val == nil {
+								strVal = "NULL"
+							} else {
+								switch v := val.(type) {
+								case []byte:
+									strVal = string(v)
+								case string:
+									strVal = v
+								case int64:
+									strVal = fmt.Sprintf("%d", v)
+									if colName == "Seconds_Behind_Master" {
+										secondsBehind.Int64 = v
+										secondsBehind.Valid = true
+									}
+								default:
+									strVal = fmt.Sprintf("%v", v)
+								}
+							}
+							columns[colName] = strVal
+						}
+
+						// Extract the values we need - handle both MySQL 5.7 and 8.0+ column names
+						if mh, ok := columns["Master_Host"]; ok {
+							masterHost = mh
+						} else if mh, ok := columns["Source_Host"]; ok {
+							masterHost = mh
+						}
+
+						if io, ok := columns["Slave_IO_Running"]; ok {
+							ioRunning = io
+						} else if io, ok := columns["Replica_IO_Running"]; ok {
+							ioRunning = io
+						}
+
+						if sql, ok := columns["Slave_SQL_Running"]; ok {
+							sqlRunning = sql
+						} else if sql, ok := columns["Replica_SQL_Running"]; ok {
+							sqlRunning = sql
+						}
+
+						if sbm, ok := columns["Seconds_Behind_Master"]; ok && sbm != "NULL" {
+							if sbmInt, err := strconv.ParseInt(sbm, 10, 64); err == nil {
+								secondsBehind.Int64 = sbmInt
+								secondsBehind.Valid = true
+							}
+						} else if sbm, ok := columns["Seconds_Behind_Source"]; ok && sbm != "NULL" {
+							if sbmInt, err := strconv.ParseInt(sbm, 10, 64); err == nil {
+								secondsBehind.Int64 = sbmInt
+								secondsBehind.Valid = true
+							}
+						}
+
+						if state, ok := columns["Slave_SQL_Running_State"]; ok {
+							sqlRunningState = state
+						} else if state, ok := columns["Replica_SQL_Running_State"]; ok {
+							sqlRunningState = state
+						}
+
+						if rgs, ok := columns["Retrieved_Gtid_Set"]; ok {
+							retrievedGtidSet = rgs
+						}
+
+						if egs, ok := columns["Executed_Gtid_Set"]; ok {
+							executedGtidSet = egs
+						}
+					}
+
+					// Print comprehensive replication status report
+					fmt.Println("\nReplication Status:")
+					fmt.Printf("                 Master_Host: %s\n", masterHost)
+					fmt.Printf("            Slave_IO_Running: %s\n", ioRunning)
+					fmt.Printf("           Slave_SQL_Running: %s\n", sqlRunning)
+					if secondsBehind.Valid {
+						fmt.Printf("       Seconds_Behind_Master: %d\n", secondsBehind.Int64)
+					} else {
+						fmt.Printf("       Seconds_Behind_Master: NULL\n")
+					}
+					fmt.Printf("     Slave_SQL_Running_State: %s\n", sqlRunningState)
+					fmt.Printf("          Retrieved_Gtid_Set: %s\n", retrievedGtidSet)
+					fmt.Printf("           Executed_Gtid_Set: %s\n", executedGtidSet)
+
+					// Still keep the simple status indicator
+					if ioRunning == "Yes" && sqlRunning == "Yes" {
+						fmt.Printf("%s Replication is running on %s\n", green("[+]"), fixLocation)
+						fmt.Printf("%s Note: Applied errant GTID %s to %s, but it will still show as errant until applied to source\n",
+							blue("[i]"), errantTransactions, fixLocation)
+					} else {
+						fmt.Printf("%s Replication issue on %s\n", red("[-]"), fixLocation)
+					}
+				}
+			}
 		}
 	}
 }
