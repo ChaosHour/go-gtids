@@ -523,6 +523,7 @@ This project uses [GoReleaser](https://goreleaser.com/) to automate releases for
 ### Supported Platforms
 
 Releases are automatically built for:
+
 - **macOS** (amd64, arm64)
 - **Linux** (amd64, arm64)
 - **Windows** (amd64, arm64)
@@ -530,6 +531,7 @@ Releases are automatically built for:
 ### Creating a Release
 
 1. **Tag the release:**
+
    ```bash
    git tag v1.0.0
    git push origin v1.0.0
@@ -539,7 +541,7 @@ Releases are automatically built for:
    - Build binaries for all platforms
    - Create archives (tar.gz for Unix, zip for Windows)
    - Generate checksums
-   - Create a GitHub release with changelog
+   - Create a GitHub release
 
 ### Local Release Testing
 
@@ -559,7 +561,7 @@ make release-local
 ### Release Artifacts
 
 Each release includes:
+
 - Binary executables for each platform
 - Compressed archives
 - SHA256 checksums file
-- Auto-generated changelog
