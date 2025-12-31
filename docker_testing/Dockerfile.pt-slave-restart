@@ -13,5 +13,5 @@ RUN apt-get update && \
 COPY .my.cnf-FLYWAY /root/.my.cnf
 RUN chmod 600 /root/.my.cnf
 
-# This container will run go-gtids by default
+# This container will run pt-slave-restart by default
 ENTRYPOINT ["pt-slave-restart"]

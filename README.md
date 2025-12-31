@@ -336,3 +336,230 @@ Applied entry: 35e31a1e-1c26-11f0-b708-f6db8cba6bab:11
 [+] server_uuid: 35e31a1e-1c26-11f0-b708-f6db8cba6bab
 [+] No Errant Transactions: 
 ```
+
+## Testing
+
+The project includes comprehensive testing infrastructure with Docker-based MySQL instances and realistic test data.
+
+### ✅ Testing Status
+
+The testing infrastructure is fully functional:
+
+- ✅ Docker Compose setup with MySQL 8.0 instances
+- ✅ GTID detection working correctly
+- ✅ Errant transaction fixing working correctly  
+- ✅ Test data loaded and generating realistic scenarios
+- ✅ Integration tests passing
+
+### Quick Start Testing
+
+1. **Start test databases:**
+
+   ```bash
+   make test-db-up
+   ```
+
+2. **Run unit tests:**
+
+   ```bash
+   make test
+   ```
+
+3. **Run tests with coverage:**
+
+   ```bash
+   make test-cover
+   ```
+
+4. **Run integration tests:**
+
+   ```bash
+   make test-integration
+   ```
+
+5. **Stop test databases:**
+
+   ```bash
+   make test-db-down
+   ```
+
+### Test Database Setup
+
+The `docker-compose.yml` creates two MySQL 8.0 instances:
+
+- **mysql-source**: Port 3306, Server ID 1
+- **mysql-target**: Port 3307, Server ID 2
+
+Both instances are configured with:
+
+- GTID mode enabled
+- Binary logging enabled
+- Test database `chaos2` with sample data
+- Root user credentials (from `.env` file)
+
+### Environment Configuration
+
+Database passwords and configuration are stored in a `.env` file:
+
+```bash
+# Create .env file
+cat > .env << 'EOF'
+MYSQL_ROOT_PASSWORD=your_secure_password
+MYSQL_DATABASE=chaos2
+EOF
+
+# The .env file is automatically loaded by docker-compose
+```
+
+**Note**: The `.env` file is excluded from version control for security.
+
+### Test Data
+
+The `sql/` directory contains comprehensive test schemas:
+
+- **`tables.sql`**: Complete e-commerce schema with users, orders, products, and audit logs
+- **`tables2.sql`**: GTID-specific test scenarios for creating errant transactions
+
+### SSL Configuration for Testing
+
+If you encounter connection issues with SSL, you can temporarily disable SSL for testing:
+
+```bash
+# Backup your config
+cp ~/.my.cnf ~/.my.cnf.backup
+
+# Create test config with SSL disabled
+cat > ~/.my.cnf << 'EOF'
+[client]
+ssl-mode=DISABLED
+user=root
+password=your_password
+EOF
+
+# Run tests...
+make test-integration
+
+# Restore original config
+cp ~/.my.cnf.backup ~/.my.cnf
+```
+
+### Manual Testing
+
+Connect to test databases:
+
+```bash
+# Test connection (non-interactive)
+make test-db-ping-source
+make test-db-ping-target
+
+# Interactive shell
+make test-db-shell-source
+make test-db-shell-target
+
+# Or use the script directly:
+./db-shell.sh source query    # Test connection
+./db-shell.sh target shell    # Interactive shell
+```
+
+Run go-gtids against test instances:
+
+```bash
+# Build for testing
+make build
+
+# Test basic functionality
+make test-gtids
+
+# Test with fix
+make test-gtids-fix
+
+# Test with fix-replica
+make test-gtids-fix-replica
+```
+
+### Docker Testing
+
+Build test container:
+
+```bash
+make build-docker-test
+```
+
+Run in Docker:
+
+```bash
+docker run --network host go-gtids-test -s 127.0.0.1 -t 127.0.0.1 -target-port 3307
+```
+
+### Test Scenarios
+
+The SQL files enable testing of:
+
+1. **Basic GTID Detection**: Verify tool detects differences between source and target
+2. **Errant Transaction Fixing**: Test `-fix` and `-fix-replica` functionality
+3. **Bulk Operations**: Performance testing with large datasets
+4. **Conflict Simulation**: Test complex replication scenarios
+5. **Schema Drift**: Test handling of structural differences
+
+### Troubleshooting
+
+View database logs:
+
+```bash
+make test-db-logs
+```
+
+Check database health:
+
+```bash
+docker-compose ps
+docker-compose exec mysql-source mysqladmin ping
+```
+
+## Releases
+
+This project uses [GoReleaser](https://goreleaser.com/) to automate releases for multiple platforms.
+
+### Supported Platforms
+
+Releases are automatically built for:
+- **macOS** (amd64, arm64)
+- **Linux** (amd64, arm64)
+- **Windows** (amd64, arm64)
+
+### Creating a Release
+
+1. **Tag the release:**
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+2. **GitHub Actions will automatically:**
+   - Build binaries for all platforms
+   - Create archives (tar.gz for Unix, zip for Windows)
+   - Generate checksums
+   - Create a GitHub release with changelog
+
+### Local Release Testing
+
+Test the release process locally:
+
+```bash
+# Install GoReleaser (if not already installed)
+go install github.com/goreleaser/goreleaser@latest
+
+# Dry run (doesn't create release)
+make release-dry-run
+
+# Build locally without publishing
+make release-local
+```
+
+### Release Artifacts
+
+Each release includes:
+- Binary executables for each platform
+- Compressed archives
+- SHA256 checksums file
+- Auto-generated changelog

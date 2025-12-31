@@ -1,0 +1,55 @@
+services:
+  mysql-source:
+    image: mysql:8.0
+    container_name: mysql-source
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d
+      - ./mysql-init:/docker-entrypoint-initdb.d
+      - mysql_source_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    command: 
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --log-bin=mysql-bin
+      - --server-id=1
+      - --bind-address=0.0.0.0
+      - --skip-name-resolve
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  mysql-target:
+    image: mysql:8.0
+    container_name: mysql-target
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d
+      - ./mysql-init:/docker-entrypoint-initdb.d
+      - mysql_target_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    command: 
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --log-bin=mysql-bin
+      - --server-id=2
+      - --bind-address=0.0.0.0
+      - --skip-name-resolve
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    depends_on:
+      mysql-source:
+        condition: service_healthy
+
+volumes:
+  mysql_source_data:
+  mysql_target_data:
