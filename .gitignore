@@ -19,3 +19,11 @@
 
 # txt_files dir
 txt_files/
+
+# Environment files
+.env
+
+# MySQL credential files (keep templates, ignore actual configs)
+.my.cnf-FLYWAY
+.my.cnf-*
+!.my.cnf-*.template

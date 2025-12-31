@@ -1,0 +1,30 @@
+# =============================================================================
+# MySQL Client Configuration Template for go-gtids Docker Testing
+# =============================================================================
+# 
+# SETUP INSTRUCTIONS:
+# 1. Copy this file to .my.cnf-FLYWAY:
+#    cp .my.cnf-FLYWAY.template .my.cnf-FLYWAY
+#
+# 2. Edit .my.cnf-FLYWAY and replace the placeholder values with your
+#    actual test database credentials
+#
+# 3. Ensure proper permissions:
+#    chmod 600 .my.cnf-FLYWAY
+#
+# NOTE: .my.cnf-FLYWAY is excluded from version control for security.
+#       Never commit files containing real credentials.
+# =============================================================================
+
+[client]
+user = flyway
+password = changeme_test_only
+# Optionally disable SSL for local testing:
+# ssl-mode = DISABLED
+
+[mysql]
+# Default database for mysql client
+database = mysql
+
+# Additional options
+prompt = "\\u@\\h [\\d]> "

@@ -37,9 +37,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	gtids.ReadMyCnf()
-	gtids.ConnectToDatabaseWithPort(*source, *sourcePort, *target, *targetPort)
-	gtids.CheckGtidSetSubset(gtids.Db1, gtids.Db2, *source, *target, *fix, *fixReplica)
-	defer gtids.Db1.Close()
-	defer gtids.Db2.Close()
+	db1, db2, err := gtids.ConnectToDatabases(*source, *sourcePort, *target, *targetPort)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to databases: %v\n", err)
+		os.Exit(1)
+	}
+	defer db1.Close()
+	defer db2.Close()
+
+	err = gtids.CheckGtidSetSubset(db1, db2, *source, *target, *fix, *fixReplica)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error checking GTID set subset: %v\n", err)
+		os.Exit(1)
+	}
 }
