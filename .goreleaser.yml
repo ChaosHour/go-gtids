@@ -42,5 +42,4 @@ release:
     owner: ChaosHour
     name: go-gtids
   draft: false
-  prerelease: auto
-  mode: append
+  prerelease: false
