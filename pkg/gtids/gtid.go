@@ -240,6 +240,17 @@ func checkErrantTransactions(targetGtid, sourceGtid string, db *sql.DB) (errant 
 	return errant, nil
 }
 
+// checkMissingTransactions uses gtid_subtract to find transactions that exist on source but not on target
+func checkMissingTransactions(sourceGtid, targetGtid string, db *sql.DB) (missing string, err error) {
+	err = retryDatabaseOperation(func() error {
+		return db.QueryRow("select gtid_subtract('" + sourceGtid + "','" + targetGtid + "') as missing_transactions").Scan(&missing)
+	}, 3)
+	if err != nil {
+		return "", fmt.Errorf("failed to check missing transactions: %w", err)
+	}
+	return missing, nil
+}
+
 // getBinaryLogInfo retrieves binary log information from SHOW MASTER STATUS
 func getBinaryLogInfo(db *sql.DB) (logName string, executedGtidSet string, err error) {
 	var pos int
@@ -331,6 +342,93 @@ func applyGtidFixes(db *sql.DB, entries []string, fixLocation string) error {
 
 		fmt.Printf("Applied entry to %s: %s\n", fixLocation, entry)
 	}
+	return nil
+}
+
+// applyMissingGtidFixes applies the missing GTID entries to the replica
+func applyMissingGtidFixes(db *sql.DB, entries []string, fixLocation string) error {
+	// Determine replication commands
+	stopCmd, startCmd, statusCmd, err := determineReplicationCommands(db)
+	if err != nil {
+		return fmt.Errorf("failed to determine replication commands: %w", err)
+	}
+
+	// Stop replication
+	fmt.Printf("Stopping replication on %s...\n", fixLocation)
+	_, err = db.Exec(stopCmd)
+	if err != nil {
+		return fmt.Errorf("failed to stop replication on %s: %w", fixLocation, err)
+	}
+
+	// Disable binary logging
+	fmt.Printf("Disabling binary logging on %s...\n", fixLocation)
+	_, err = db.Exec("SET sql_log_bin = 0")
+	if err != nil {
+		log.Printf("Warning: Failed to disable binary logging: %v\n", err)
+	}
+
+	fmt.Printf("Applying missing GTIDs to %s...\n", fixLocation)
+
+	for _, entry := range entries {
+		err := retryDatabaseOperation(func() error {
+			_, err := db.Exec("SET GTID_NEXT='" + entry + "'")
+			return err
+		}, 3)
+		if err != nil {
+			return fmt.Errorf("failed to set GTID_NEXT for %s: %w", entry, err)
+		}
+
+		err = retryDatabaseOperation(func() error {
+			_, err := db.Exec("BEGIN")
+			return err
+		}, 3)
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction for %s: %w", entry, err)
+		}
+
+		err = retryDatabaseOperation(func() error {
+			_, err := db.Exec("COMMIT")
+			return err
+		}, 3)
+		if err != nil {
+			return fmt.Errorf("failed to commit transaction for %s: %w", entry, err)
+		}
+
+		err = retryDatabaseOperation(func() error {
+			_, err := db.Exec("SET GTID_NEXT='AUTOMATIC'")
+			return err
+		}, 3)
+		if err != nil {
+			return fmt.Errorf("failed to reset GTID_NEXT for %s: %w", entry, err)
+		}
+
+		fmt.Printf("Applied missing entry to %s: %s\n", fixLocation, entry)
+	}
+
+	// Re-enable binary logging
+	fmt.Printf("Re-enabling binary logging on %s...\n", fixLocation)
+	_, err = db.Exec("SET sql_log_bin = 1")
+	if err != nil {
+		return fmt.Errorf("failed to re-enable binary logging on %s: %w", fixLocation, err)
+	}
+
+	// Start replication
+	fmt.Printf("Starting replication on %s...\n", fixLocation)
+	_, err = db.Exec(startCmd)
+	if err != nil {
+		return fmt.Errorf("failed to start replication on %s: %w", fixLocation, err)
+	}
+
+	// Wait and verify
+	fmt.Printf("Waiting for replication to initialize...\n")
+	time.Sleep(2 * time.Second)
+
+	fmt.Printf("Verifying replication status on %s...\n", fixLocation)
+	err = verifyReplicationStatus(db, statusCmd, fixLocation, "")
+	if err != nil {
+		return fmt.Errorf("failed to verify replication status on %s: %w", fixLocation, err)
+	}
+
 	return nil
 }
 
@@ -489,7 +587,7 @@ func verifyReplicationStatus(db *sql.DB, statusCmd string, fixLocation string, e
 	return nil
 }
 
-func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool, fixReplica bool) error {
+func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool, fixReplica bool, fixMissingReplica bool) error {
 	var sourceGtidSet string
 	var targetGtidSet string
 	var errantTransactions string
@@ -640,6 +738,29 @@ func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, 
 						return fmt.Errorf("failed to verify replication status on %s: %w", fixLocation, err)
 					}
 				}
+			}
+		}
+
+		// Handle fixMissingReplica
+		if fixMissingReplica {
+			missingGtids, err := checkMissingTransactions(sourceGtidSet, targetGtidSet, db1) // Use db1 for the query
+			if err != nil {
+				return fmt.Errorf("failed to check missing transactions: %w", err)
+			}
+			if missingGtids != "" {
+				fmt.Printf("[-] Missing GTIDs: %s\n", missingGtids)
+
+				entries, err := parseErrantTransactions(missingGtids)
+				if err != nil {
+					return fmt.Errorf("failed to parse missing GTIDs: %w", err)
+				}
+
+				err = applyMissingGtidFixes(db2, entries, "replica")
+				if err != nil {
+					return fmt.Errorf("failed to apply missing GTID fixes: %w", err)
+				}
+			} else {
+				fmt.Println(green("[+]"), "No Missing GTIDs")
 			}
 		}
 	}
