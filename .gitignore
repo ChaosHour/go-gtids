@@ -27,3 +27,6 @@ txt_files/
 .my.cnf-FLYWAY
 .my.cnf-*
 !.my.cnf-*.template
+# Build output
+bin/
+dist/

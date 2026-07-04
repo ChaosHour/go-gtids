@@ -29,15 +29,15 @@ all: build-docker-go build-docker-pt
 # Testing targets
 test:
 	@echo "Running unit tests..."
-	@go test -v ./pkg/gtids
+	@go test -short -v ./pkg/gtids
 
 test-cover:
 	@echo "Running tests with coverage..."
-	@go test -cover ./pkg/gtids
+	@go test -short -cover ./pkg/gtids
 
 test-integration: test-db-up
 	@echo "Running integration tests..."
-	@go test -v -tags=integration ./pkg/gtids || (make test-db-down; exit 1)
+	@go test -v ./pkg/gtids || (make test-db-down; exit 1)
 	@make test-db-down
 
 test-db-up:
