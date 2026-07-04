@@ -1,16 +1,16 @@
 module github.com/ChaosHour/go-gtids
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.19.0
 	github.com/go-sql-driver/mysql v1.8.1
 )
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 )
