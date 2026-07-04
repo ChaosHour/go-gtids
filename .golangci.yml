@@ -1,0 +1,11 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # defer x.Close() on read paths is idiomatic; write-path errors are
+      # surfaced by the statements themselves.
+      exclude-functions:
+        - (*database/sql.DB).Close
+        - (*database/sql.Conn).Close
+        - (*database/sql.Rows).Close

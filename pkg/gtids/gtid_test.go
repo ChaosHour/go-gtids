@@ -1,9 +1,11 @@
 package gtids
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -267,13 +269,33 @@ func TestOracleGtidSetEntry_Explode(t *testing.T) {
 	}
 }
 
-func TestDetermineReplicationCommands(t *testing.T) {
-	// Note: This test would require a mock database connection
-	// For now, we'll test the logic by examining the determineReplicationCommands function
-	// and ensuring it returns appropriate commands based on version strings
+func TestReplicationCommandsForVersion(t *testing.T) {
+	tests := []struct {
+		version  string
+		wantStop string
+	}{
+		{"5.7.44-log", "STOP SLAVE"},
+		{"8.0.21", "STOP SLAVE"},
+		{"8.0.22", "STOP REPLICA"},
+		{"8.0.32-24", "STOP REPLICA"},
+		{"8.4.0", "STOP REPLICA"},
+		{"9.1.0", "STOP REPLICA"},
+		{"10.11.6-MariaDB", "STOP SLAVE"},
+		{"garbage", "STOP SLAVE"},
+	}
 
-	// This is a placeholder - full testing would require database mocking
-	t.Skip("Database mocking required for full testing")
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			stop, start, status := replicationCommandsForVersion(tt.version)
+			if stop != tt.wantStop {
+				t.Errorf("version %q: expected %q, got %q", tt.version, tt.wantStop, stop)
+			}
+			wantPrefix := strings.TrimPrefix(tt.wantStop, "STOP ")
+			if !strings.HasSuffix(start, wantPrefix) || !strings.HasSuffix(status, "STATUS") {
+				t.Errorf("version %q: inconsistent commands: %q / %q / %q", tt.version, stop, start, status)
+			}
+		})
+	}
 }
 
 // DatabaseInterface defines the database operations we need for testing
@@ -302,7 +324,7 @@ func TestGetServerInfo_Integration(t *testing.T) {
 		t.Skip("Cannot ping test database:", err)
 	}
 
-	uuid, gtidExecuted, err := getServerInfo(db)
+	uuid, gtidExecuted, err := getServerInfo(context.Background(), db)
 	if err != nil {
 		t.Fatalf("getServerInfo failed: %v", err)
 	}
@@ -336,7 +358,7 @@ func TestCheckErrantTransactions_Integration(t *testing.T) {
 	}
 
 	// Test with identical GTID sets (should return empty string)
-	errant, err := checkErrantTransactions("1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", db)
+	errant, err := checkErrantTransactions(context.Background(), "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", db)
 	if err != nil {
 		t.Fatalf("checkErrantTransactions failed: %v", err)
 	}
@@ -346,7 +368,7 @@ func TestCheckErrantTransactions_Integration(t *testing.T) {
 	}
 
 	// Test with different GTID sets
-	errant, err = checkErrantTransactions("1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-5", db)
+	errant, err = checkErrantTransactions(context.Background(), "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-10", "1d1fff5a-c9bc-11ed-9c19-02a36d996b94:1-5", db)
 	if err != nil {
 		t.Fatalf("checkErrantTransactions failed: %v", err)
 	}
@@ -378,9 +400,16 @@ func TestApplyGtidFixes_Integration(t *testing.T) {
 	// Test with a simple GTID entry (using a valid UUID format)
 	entries := []string{"1d1fff5a-c9bc-11ed-9c19-02a36d996b94:123"}
 
-	err = applyGtidFixes(db, entries, "test")
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
 	if err != nil {
-		t.Fatalf("applyGtidFixes failed: %v", err)
+		t.Fatalf("failed to acquire connection: %v", err)
+	}
+	defer conn.Close()
+
+	err = applyGtidEntries(ctx, conn, entries, "test")
+	if err != nil {
+		t.Fatalf("applyGtidEntries failed: %v", err)
 	}
 
 	// If we get here, the function executed without error
