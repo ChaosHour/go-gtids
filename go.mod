@@ -3,6 +3,7 @@ module github.com/ChaosHour/go-gtids
 go 1.25
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/fatih/color v1.17.0
 	github.com/go-sql-driver/mysql v1.8.1
 )

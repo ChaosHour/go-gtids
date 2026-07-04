@@ -2,8 +2,11 @@
 package gtids
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,10 +37,15 @@ import (
 var (
 	singleValueInterval = regexp.MustCompile("^([0-9]+)$")
 	multiValueInterval  = regexp.MustCompile("^([0-9]+)[-]([0-9]+)$")
-	green               = color.New(color.FgGreen).SprintFunc()
-	red                 = color.New(color.FgRed).SprintFunc()
-	yellow              = color.New(color.FgYellow).SprintFunc()
-	blue                = color.New(color.FgBlue).SprintFunc()
+	// gtidEntryPattern matches a single exploded GTID entry (uuid:transaction-id).
+	// SET GTID_NEXT cannot be parameterized, so entries are validated against this
+	// before being interpolated into the statement.
+	gtidEntryPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}:[0-9]+$`)
+	versionPattern   = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
+	green            = color.New(color.FgGreen).SprintFunc()
+	red              = color.New(color.FgRed).SprintFunc()
+	yellow           = color.New(color.FgYellow).SprintFunc()
+	blue             = color.New(color.FgBlue).SprintFunc()
 )
 
 // OracleGtidSetEntry represents an entry in a set of GTID ranges,
@@ -69,7 +77,7 @@ func (oge *OracleGtidSetEntry) String() string {
 	return fmt.Sprintf("%s:%s", oge.UUID, oge.Ranges)
 }
 
-// String returns a user-friendly string representation of this entry
+// Explode returns this entry as a list of single-transaction entries
 func (oge *OracleGtidSetEntry) Explode() (result [](*OracleGtidSetEntry)) {
 	intervals := strings.Split(oge.Ranges, ":")
 	for _, interval := range intervals {
@@ -85,22 +93,6 @@ func (oge *OracleGtidSetEntry) Explode() (result [](*OracleGtidSetEntry)) {
 	}
 	return result
 }
-
-/*
-   Copyright 2015 Shlomi Noach, courtesy Booking.com
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
 
 // OracleGtidSet represents a set of GTID ranges as depicted by Retrieved_Gtid_Set, Executed_Gtid_Set or @@gtid_purged.
 type OracleGtidSet struct {
@@ -189,7 +181,7 @@ func (ogs *OracleGtidSet) SharedUUIDs(other *OracleGtidSet) (shared []string) {
 	return shared
 }
 
-// String returns a user-friendly string representation of this entry
+// Explode returns the set as a list of single-transaction entries
 func (ogs *OracleGtidSet) Explode() (result [](*OracleGtidSetEntry)) {
 	for _, entries := range ogs.GtidEntries {
 		result = append(result, entries.Explode()...)
@@ -209,18 +201,17 @@ func (ogs *OracleGtidSet) IsEmpty() bool {
 	return len(ogs.GtidEntries) == 0
 }
 
-// function to check the GTID set subset issue and fix it if the -fix flag is set
 // getServerInfo retrieves the server UUID and GTID_EXECUTED from a database connection
-func getServerInfo(db *sql.DB) (uuid, gtidExecuted string, err error) {
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("SELECT @@server_uuid").Scan(&uuid)
+func getServerInfo(ctx context.Context, db *sql.DB) (uuid, gtidExecuted string, err error) {
+	err = retryDatabaseOperation(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT @@server_uuid").Scan(&uuid)
 	}, 3)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get server UUID: %w", err)
 	}
 
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("SELECT @@GLOBAL.GTID_EXECUTED").Scan(&gtidExecuted)
+	err = retryDatabaseOperation(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT @@GLOBAL.GTID_EXECUTED").Scan(&gtidExecuted)
 	}, 3)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get GTID_EXECUTED: %w", err)
@@ -230,9 +221,9 @@ func getServerInfo(db *sql.DB) (uuid, gtidExecuted string, err error) {
 }
 
 // checkErrantTransactions uses gtid_subtract to find transactions that exist on target but not on source
-func checkErrantTransactions(targetGtid, sourceGtid string, db *sql.DB) (errant string, err error) {
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("select gtid_subtract('" + targetGtid + "','" + sourceGtid + "') as errant_transactions").Scan(&errant)
+func checkErrantTransactions(ctx context.Context, targetGtid, sourceGtid string, db *sql.DB) (errant string, err error) {
+	err = retryDatabaseOperation(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT gtid_subtract(?, ?) AS errant_transactions", targetGtid, sourceGtid).Scan(&errant)
 	}, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to check errant transactions: %w", err)
@@ -241,9 +232,9 @@ func checkErrantTransactions(targetGtid, sourceGtid string, db *sql.DB) (errant 
 }
 
 // checkMissingTransactions uses gtid_subtract to find transactions that exist on source but not on target
-func checkMissingTransactions(sourceGtid, targetGtid string, db *sql.DB) (missing string, err error) {
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("select gtid_subtract('" + sourceGtid + "','" + targetGtid + "') as missing_transactions").Scan(&missing)
+func checkMissingTransactions(ctx context.Context, sourceGtid, targetGtid string, db *sql.DB) (missing string, err error) {
+	err = retryDatabaseOperation(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT gtid_subtract(?, ?) AS missing_transactions", sourceGtid, targetGtid).Scan(&missing)
 	}, 3)
 	if err != nil {
 		return "", fmt.Errorf("failed to check missing transactions: %w", err)
@@ -251,24 +242,78 @@ func checkMissingTransactions(sourceGtid, targetGtid string, db *sql.DB) (missin
 	return missing, nil
 }
 
-// getBinaryLogInfo retrieves binary log information from SHOW MASTER STATUS
-func getBinaryLogInfo(db *sql.DB) (logName string, executedGtidSet string, err error) {
-	var pos int
-	var Binlog_Do_DB string
-	var Binlog_Ignore_DB string
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("SHOW MASTER STATUS").Scan(&logName, &pos, &Binlog_Do_DB, &Binlog_Ignore_DB, &executedGtidSet)
-	}, 3)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get binary log info: %w", err)
+// getBinaryLogInfo retrieves the current binary log file name.
+// MySQL 8.4 removed SHOW MASTER STATUS in favor of SHOW BINARY LOG STATUS
+// (available since 8.2), so try the new statement first and fall back.
+func getBinaryLogInfo(ctx context.Context, db *sql.DB) (logName string, err error) {
+	for _, stmt := range []string{"SHOW BINARY LOG STATUS", "SHOW MASTER STATUS"} {
+		logName, err = queryColumnByName(ctx, db, stmt, "File")
+		if err == nil {
+			return logName, nil
+		}
 	}
-	return logName, executedGtidSet, nil
+	return "", fmt.Errorf("failed to get binary log info: %w", err)
+}
+
+// queryColumnByName runs a query and returns the named column from the first row,
+// scanning dynamically so column count/order differences across versions don't matter.
+func queryColumnByName(ctx context.Context, db *sql.DB, query, column string) (string, error) {
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("%s returned no rows", query)
+	}
+	columns, err := scanRowAsMap(rows)
+	if err != nil {
+		return "", err
+	}
+	value, ok := columns[column]
+	if !ok {
+		return "", fmt.Errorf("column %s not found in %s output", column, query)
+	}
+	return value, nil
+}
+
+// scanRowAsMap scans the current row of rows into a column-name -> string map.
+func scanRowAsMap(rows *sql.Rows) (map[string]string, error) {
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	values := make([]any, len(cols))
+	scanArgs := make([]any, len(cols))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+	if err := rows.Scan(scanArgs...); err != nil {
+		return nil, err
+	}
+	columns := make(map[string]string, len(cols))
+	for i, colName := range cols {
+		switch v := values[i].(type) {
+		case nil:
+			columns[colName] = "NULL"
+		case []byte:
+			columns[colName] = string(v)
+		case string:
+			columns[colName] = v
+		default:
+			columns[colName] = fmt.Sprintf("%v", v)
+		}
+	}
+	return columns, nil
 }
 
 // parseErrantTransactions explodes the errant GTID set into individual entries
 func parseErrantTransactions(errant string) ([]string, error) {
-	gtidSet := errant
-	oracleGtidSet, err := NewOracleGtidSet(gtidSet)
+	oracleGtidSet, err := NewOracleGtidSet(errant)
 	if err != nil {
 		return nil, err
 	}
@@ -281,184 +326,198 @@ func parseErrantTransactions(errant string) ([]string, error) {
 	return entries, nil
 }
 
+// replicationCommandsForVersion picks STOP/START SLAVE vs REPLICA statements.
+// MySQL 8.0.22 introduced the REPLICA statements; 8.4 removed the SLAVE ones.
+// MariaDB keeps the SLAVE statements (and has an incompatible GTID scheme anyway).
+func replicationCommandsForVersion(version string) (stopCmd, startCmd, statusCmd string) {
+	if !strings.Contains(strings.ToLower(version), "mariadb") {
+		if m := versionPattern.FindStringSubmatch(version); m != nil {
+			major, _ := strconv.Atoi(m[1])
+			minor, _ := strconv.Atoi(m[2])
+			patch, _ := strconv.Atoi(m[3])
+			if major > 8 || (major == 8 && (minor > 0 || patch >= 22)) {
+				return "STOP REPLICA", "START REPLICA", "SHOW REPLICA STATUS"
+			}
+		}
+	}
+	return "STOP SLAVE", "START SLAVE", "SHOW SLAVE STATUS"
+}
+
 // determineReplicationCommands determines the correct replication commands based on MySQL version
-func determineReplicationCommands(db *sql.DB) (stopCmd, startCmd, statusCmd string, err error) {
+func determineReplicationCommands(ctx context.Context, db *sql.DB) (stopCmd, startCmd, statusCmd string, err error) {
 	var version string
-	err = retryDatabaseOperation(func() error {
-		return db.QueryRow("SELECT VERSION()").Scan(&version)
+	err = retryDatabaseOperation(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
 	}, 3)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get MySQL version: %w", err)
 	}
-
-	// MySQL 8.0.22+ uses STOP REPLICA, older versions use STOP SLAVE
-	if strings.Contains(version, "8.0") {
-		// Extract version number to check if >= 8.0.22
-		re := regexp.MustCompile(`8\.0\.(\d+)`)
-		matches := re.FindStringSubmatch(version)
-		if len(matches) > 1 {
-			if minorVersion, err := strconv.Atoi(matches[1]); err == nil && minorVersion >= 22 {
-				return "STOP REPLICA", "START REPLICA", "SHOW REPLICA STATUS", nil
-			}
-		}
-	}
-	return "STOP SLAVE", "START SLAVE", "SHOW SLAVE STATUS", nil
+	stopCmd, startCmd, statusCmd = replicationCommandsForVersion(version)
+	return stopCmd, startCmd, statusCmd, nil
 }
 
-// applyGtidFixes applies the errant GTID entries to the specified database
-func applyGtidFixes(db *sql.DB, entries []string, fixLocation string) error {
+// Options controls the fix behavior of CheckGtidSetSubset.
+type Options struct {
+	Fix               bool // apply errant GTIDs to the source
+	FixReplica        bool // apply errant GTIDs to the replica
+	FixMissingReplica bool // mark missing GTIDs as executed on the replica (skips their data)
+	DryRun            bool // print the statements a fix would run without executing them
+	AssumeYes         bool // skip the confirmation prompt
+}
+
+// confirmAction prompts on stdin before a destructive operation. Non-interactive
+// runs (closed stdin, cron) hit EOF and abort — pass -yes to skip the prompt.
+func confirmAction(prompt string, assumeYes bool) bool {
+	if assumeYes {
+		return true
+	}
+	fmt.Printf("%s %s Type 'yes' to continue (or pass -yes to skip this prompt): ", yellow("[?]"), prompt)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		fmt.Println("\nNo confirmation received — aborting.")
+		return false
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
+}
+
+// printGtidStatements prints the empty-transaction sequence a fix would execute.
+func printGtidStatements(entries []string) {
 	for _, entry := range entries {
-		err := retryDatabaseOperation(func() error {
-			_, err := db.Exec("SET GTID_NEXT='" + entry + "'")
-			return err
-		}, 3)
-		if err != nil {
+		fmt.Printf("    SET GTID_NEXT='%s'; BEGIN; COMMIT;\n", entry)
+	}
+	fmt.Println("    SET GTID_NEXT='AUTOMATIC';")
+}
+
+// dryRunSourceFix prints what applyGtidsToSource would execute.
+func dryRunSourceFix(entries []string) {
+	fmt.Println(yellow("[dry-run]"), "Would execute on source (single pinned session):")
+	printGtidStatements(entries)
+}
+
+// dryRunReplicaFix prints what applyGtidsToReplica would execute.
+func dryRunReplicaFix(ctx context.Context, db *sql.DB, entries []string) error {
+	stopCmd, startCmd, _, err := determineReplicationCommands(ctx, db)
+	if err != nil {
+		return fmt.Errorf("failed to determine replication commands: %w", err)
+	}
+	fmt.Println(yellow("[dry-run]"), "Would execute on replica (single pinned session):")
+	fmt.Printf("    %s;\n", stopCmd)
+	fmt.Println("    SET SESSION sql_log_bin = 0;")
+	printGtidStatements(entries)
+	fmt.Println("    SET SESSION sql_log_bin = 1;")
+	fmt.Printf("    %s;\n", startCmd)
+	return nil
+}
+
+// applyGtidEntries injects an empty transaction for each GTID entry on a single
+// pinned connection. GTID_NEXT is session-scoped, so every statement in the
+// sequence must run on the same connection — never on the *sql.DB pool.
+// GTID_NEXT is always reset to AUTOMATIC before returning, even on failure.
+func applyGtidEntries(ctx context.Context, conn *sql.Conn, entries []string, fixLocation string) (err error) {
+	defer func() {
+		// Cleanup must run even if ctx was cancelled (e.g. Ctrl-C mid-apply).
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, resetErr := conn.ExecContext(cleanupCtx, "SET GTID_NEXT='AUTOMATIC'"); resetErr != nil && err == nil {
+			err = fmt.Errorf("failed to reset GTID_NEXT to AUTOMATIC: %w", resetErr)
+		}
+	}()
+
+	for _, entry := range entries {
+		if !gtidEntryPattern.MatchString(entry) {
+			return fmt.Errorf("refusing to apply invalid GTID entry %q", entry)
+		}
+		if _, err := conn.ExecContext(ctx, "SET GTID_NEXT='"+entry+"'"); err != nil {
 			return fmt.Errorf("failed to set GTID_NEXT for %s: %w", entry, err)
 		}
-
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("BEGIN")
-			return err
-		}, 3)
-		if err != nil {
+		if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 			return fmt.Errorf("failed to begin transaction for %s: %w", entry, err)
 		}
-
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("COMMIT")
-			return err
-		}, 3)
-		if err != nil {
+		if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 			return fmt.Errorf("failed to commit transaction for %s: %w", entry, err)
 		}
-
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("SET GTID_NEXT='AUTOMATIC'")
-			return err
-		}, 3)
-		if err != nil {
-			return fmt.Errorf("failed to reset GTID_NEXT for %s: %w", entry, err)
-		}
-
 		fmt.Printf("Applied entry to %s: %s\n", fixLocation, entry)
 	}
 	return nil
 }
 
-// applyMissingGtidFixes applies the missing GTID entries to the replica
-func applyMissingGtidFixes(db *sql.DB, entries []string, fixLocation string) error {
-	// Determine replication commands
-	stopCmd, startCmd, statusCmd, err := determineReplicationCommands(db)
+// applyGtidsToSource injects empty transactions on the source (binary logging
+// stays on so the GTIDs replicate downstream, where they are auto-skipped).
+func applyGtidsToSource(ctx context.Context, db *sql.DB, entries []string) error {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Close()
+
+	fmt.Println("Applying errant GTIDs to source...")
+	return applyGtidEntries(ctx, conn, entries, "source")
+}
+
+// applyGtidsToReplica stops replication, injects empty transactions with binary
+// logging disabled on the session, then restarts replication and verifies it.
+// Replication is restarted even if applying the entries fails or ctx is cancelled.
+func applyGtidsToReplica(ctx context.Context, db *sql.DB, entries []string, fixLocation string, errantTransactions string) error {
+	stopCmd, startCmd, statusCmd, err := determineReplicationCommands(ctx, db)
 	if err != nil {
 		return fmt.Errorf("failed to determine replication commands: %w", err)
 	}
 
-	// Stop replication
+	// Cleanup must run even if ctx is cancelled mid-fix (e.g. Ctrl-C).
+	cleanupCtx := context.WithoutCancel(ctx)
+
 	fmt.Printf("Stopping replication on %s...\n", fixLocation)
-	_, err = db.Exec(stopCmd)
-	if err != nil {
+	if _, err := db.ExecContext(ctx, stopCmd); err != nil {
 		return fmt.Errorf("failed to stop replication on %s: %w", fixLocation, err)
 	}
 
-	// Disable binary logging
-	fmt.Printf("Disabling binary logging on %s...\n", fixLocation)
-	_, err = db.Exec("SET sql_log_bin = 0")
-	if err != nil {
-		log.Printf("Warning: Failed to disable binary logging: %v\n", err)
-	}
-
-	fmt.Printf("Applying missing GTIDs to %s...\n", fixLocation)
-
-	for _, entry := range entries {
-		err := retryDatabaseOperation(func() error {
-			_, err := db.Exec("SET GTID_NEXT='" + entry + "'")
-			return err
-		}, 3)
+	applyErr := func() error {
+		conn, err := db.Conn(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to set GTID_NEXT for %s: %w", entry, err)
+			return fmt.Errorf("failed to acquire connection: %w", err)
 		}
+		defer conn.Close()
 
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("BEGIN")
-			return err
-		}, 3)
-		if err != nil {
-			return fmt.Errorf("failed to begin transaction for %s: %w", entry, err)
+		fmt.Printf("Disabling binary logging on %s...\n", fixLocation)
+		if _, err := conn.ExecContext(ctx, "SET SESSION sql_log_bin = 0"); err != nil {
+			log.Printf("Warning: failed to disable binary logging: %v", err)
 		}
+		defer func() {
+			if _, err := conn.ExecContext(cleanupCtx, "SET SESSION sql_log_bin = 1"); err != nil {
+				log.Printf("Warning: failed to re-enable binary logging: %v", err)
+			}
+		}()
 
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("COMMIT")
-			return err
-		}, 3)
-		if err != nil {
-			return fmt.Errorf("failed to commit transaction for %s: %w", entry, err)
-		}
+		fmt.Printf("Applying GTIDs to %s...\n", fixLocation)
+		return applyGtidEntries(ctx, conn, entries, fixLocation)
+	}()
 
-		err = retryDatabaseOperation(func() error {
-			_, err := db.Exec("SET GTID_NEXT='AUTOMATIC'")
-			return err
-		}, 3)
-		if err != nil {
-			return fmt.Errorf("failed to reset GTID_NEXT for %s: %w", entry, err)
-		}
-
-		fmt.Printf("Applied missing entry to %s: %s\n", fixLocation, entry)
-	}
-
-	// Re-enable binary logging
-	fmt.Printf("Re-enabling binary logging on %s...\n", fixLocation)
-	_, err = db.Exec("SET sql_log_bin = 1")
-	if err != nil {
-		return fmt.Errorf("failed to re-enable binary logging on %s: %w", fixLocation, err)
-	}
-
-	// Start replication
 	fmt.Printf("Starting replication on %s...\n", fixLocation)
-	_, err = db.Exec(startCmd)
-	if err != nil {
+	if _, err := db.ExecContext(cleanupCtx, startCmd); err != nil {
+		if applyErr != nil {
+			return fmt.Errorf("applying GTIDs failed (%v) and replication could not be restarted on %s: %w", applyErr, fixLocation, err)
+		}
 		return fmt.Errorf("failed to start replication on %s: %w", fixLocation, err)
 	}
-
-	// Wait and verify
-	fmt.Printf("Waiting for replication to initialize...\n")
-	time.Sleep(2 * time.Second)
-
-	fmt.Printf("Verifying replication status on %s...\n", fixLocation)
-	err = verifyReplicationStatus(db, statusCmd, fixLocation, "")
-	if err != nil {
-		return fmt.Errorf("failed to verify replication status on %s: %w", fixLocation, err)
+	if applyErr != nil {
+		return fmt.Errorf("failed to apply GTIDs to %s: %w", fixLocation, applyErr)
 	}
 
-	return nil
+	fmt.Println("Waiting for replication to initialize...")
+	if err := sleepCtx(ctx, 2*time.Second); err != nil {
+		return err
+	}
+
+	fmt.Printf("Verifying replication status on %s...\n", fixLocation)
+	return verifyReplicationStatus(ctx, db, statusCmd, fixLocation, errantTransactions)
 }
 
 // verifyReplicationStatus checks and reports the replication status after fixes
-func verifyReplicationStatus(db *sql.DB, statusCmd string, fixLocation string, errantTransactions string) error {
-	// Try a simpler query first to verify connection is working
-	var testVar string
-	err := retryDatabaseOperation(func() error {
-		return db.QueryRow("SELECT @@version").Scan(&testVar)
-	}, 3)
-	if err != nil {
-		fmt.Printf("Debug: Error querying version: %v\n", err)
-	} else {
-		fmt.Printf("Debug: Connected to MySQL version: %s\n", testVar)
-	}
-
-	// Enhanced replication status reporting with more robust handling
-	var masterHost, retrievedGtidSet, executedGtidSet, sqlRunningState string
-	var ioRunning, sqlRunning string
-	var secondsBehind sql.NullInt64
-
-	// Get column data as a map for easier access
-	columns := make(map[string]string)
-
-	// Use SHOW SLAVE STATUS directly - works across all versions
-	fmt.Printf("Debug: Status command: %s\n", statusCmd)
+func verifyReplicationStatus(ctx context.Context, db *sql.DB, statusCmd string, fixLocation string, errantTransactions string) error {
 	var rows *sql.Rows
-	err = retryDatabaseOperation(func() error {
+	err := retryDatabaseOperation(ctx, func() error {
 		var err error
-		rows, err = db.Query(statusCmd)
+		rows, err = db.QueryContext(ctx, statusCmd)
 		return err
 	}, 3)
 	if err != nil {
@@ -466,120 +525,45 @@ func verifyReplicationStatus(db *sql.DB, statusCmd string, fixLocation string, e
 	}
 	defer rows.Close()
 
+	columns := map[string]string{}
 	if rows.Next() {
-		// Get column names
-		cols, err := rows.Columns()
-		if err != nil {
+		if columns, err = scanRowAsMap(rows); err != nil {
 			return err
-		}
-
-		fmt.Printf("Debug: Found %d columns in status output\n", len(cols))
-		fmt.Printf("Debug: Column names: %v\n", cols)
-
-		// Create a slice of interface{} to hold the values
-		values := make([]interface{}, len(cols))
-		scanArgs := make([]interface{}, len(cols))
-		for i := range values {
-			scanArgs[i] = &values[i]
-		}
-
-		// Scan the result into the values slice
-		err = rows.Scan(scanArgs...)
-		if err != nil {
-			return err
-		}
-
-		// Build a map of column name to string value
-		for i, colName := range cols {
-			var strVal string
-			val := values[i]
-
-			if val == nil {
-				strVal = "NULL"
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					strVal = string(v)
-				case string:
-					strVal = v
-				case int64:
-					strVal = fmt.Sprintf("%d", v)
-					if colName == "Seconds_Behind_Master" {
-						secondsBehind.Int64 = v
-						secondsBehind.Valid = true
-					}
-				default:
-					strVal = fmt.Sprintf("%v", v)
-				}
-			}
-			columns[colName] = strVal
-		}
-
-		// Extract the values we need - handle both MySQL 5.7 and 8.0+ column names
-		if mh, ok := columns["Master_Host"]; ok {
-			masterHost = mh
-		} else if mh, ok := columns["Source_Host"]; ok {
-			masterHost = mh
-		}
-
-		if io, ok := columns["Slave_IO_Running"]; ok {
-			ioRunning = io
-		} else if io, ok := columns["Replica_IO_Running"]; ok {
-			ioRunning = io
-		}
-
-		if sql, ok := columns["Slave_SQL_Running"]; ok {
-			sqlRunning = sql
-		} else if sql, ok := columns["Replica_SQL_Running"]; ok {
-			sqlRunning = sql
-		}
-
-		if sbm, ok := columns["Seconds_Behind_Master"]; ok && sbm != "NULL" {
-			if sbmInt, err := strconv.ParseInt(sbm, 10, 64); err == nil {
-				secondsBehind.Int64 = sbmInt
-				secondsBehind.Valid = true
-			}
-		} else if sbm, ok := columns["Seconds_Behind_Source"]; ok && sbm != "NULL" {
-			if sbmInt, err := strconv.ParseInt(sbm, 10, 64); err == nil {
-				secondsBehind.Int64 = sbmInt
-				secondsBehind.Valid = true
-			}
-		}
-
-		if state, ok := columns["Slave_SQL_Running_State"]; ok {
-			sqlRunningState = state
-		} else if state, ok := columns["Replica_SQL_Running_State"]; ok {
-			sqlRunningState = state
-		}
-
-		if rgs, ok := columns["Retrieved_Gtid_Set"]; ok {
-			retrievedGtidSet = rgs
-		}
-
-		if egs, ok := columns["Executed_Gtid_Set"]; ok {
-			executedGtidSet = egs
 		}
 	}
 
-	// Print comprehensive replication status report
+	// Handle both MySQL 5.7/8.0 (Master/Slave) and 8.0.22+ (Source/Replica) column names.
+	pick := func(names ...string) string {
+		for _, name := range names {
+			if v, ok := columns[name]; ok {
+				return v
+			}
+		}
+		return ""
+	}
+	masterHost := pick("Master_Host", "Source_Host")
+	ioRunning := pick("Slave_IO_Running", "Replica_IO_Running")
+	sqlRunning := pick("Slave_SQL_Running", "Replica_SQL_Running")
+	secondsBehind := pick("Seconds_Behind_Master", "Seconds_Behind_Source")
+	sqlRunningState := pick("Slave_SQL_Running_State", "Replica_SQL_Running_State")
+	retrievedGtidSet := pick("Retrieved_Gtid_Set")
+	executedGtidSet := pick("Executed_Gtid_Set")
+
 	fmt.Println("\nReplication Status:")
 	fmt.Printf("                 Master_Host: %s\n", masterHost)
 	fmt.Printf("            Slave_IO_Running: %s\n", ioRunning)
 	fmt.Printf("           Slave_SQL_Running: %s\n", sqlRunning)
-	if secondsBehind.Valid {
-		fmt.Printf("       Seconds_Behind_Master: %d\n", secondsBehind.Int64)
-	} else {
-		fmt.Printf("       Seconds_Behind_Master: NULL\n")
-	}
+	fmt.Printf("       Seconds_Behind_Master: %s\n", secondsBehind)
 	fmt.Printf("     Slave_SQL_Running_State: %s\n", sqlRunningState)
 	fmt.Printf("          Retrieved_Gtid_Set: %s\n", retrievedGtidSet)
 	fmt.Printf("           Executed_Gtid_Set: %s\n", executedGtidSet)
 
-	// Still keep the simple status indicator
 	if ioRunning == "Yes" && sqlRunning == "Yes" {
 		fmt.Printf("%s Replication is running on %s\n", green("[+]"), fixLocation)
-		fmt.Printf("%s Note: Applied errant GTID %s to %s, but it will still show as errant until applied to source\n",
-			blue("[i]"), errantTransactions, fixLocation)
+		if errantTransactions != "" {
+			fmt.Printf("%s Note: Applied errant GTID %s to %s, but it will still show as errant until applied to source\n",
+				blue("[i]"), errantTransactions, fixLocation)
+		}
 	} else {
 		fmt.Printf("%s Replication issue on %s\n", red("[-]"), fixLocation)
 	}
@@ -587,182 +571,116 @@ func verifyReplicationStatus(db *sql.DB, statusCmd string, fixLocation string, e
 	return nil
 }
 
-func CheckGtidSetSubset(db1 *sql.DB, db2 *sql.DB, source string, target string, fix bool, fixReplica bool, fixMissingReplica bool) error {
-	var sourceGtidSet string
-	var targetGtidSet string
-	var errantTransactions string
-	var sourceUUID, targetUUID string
-
-	// Get server information for source
-	sourceUUID, sourceGtidSet, err := getServerInfo(db1)
+// CheckGtidSetSubset compares GTID_EXECUTED between source and target, reports
+// errant/missing transactions, and optionally fixes them per opts.
+// unresolved reports whether errant or missing transactions remain after the run
+// (found in check-only mode, shown in dry-run, or left when a fix was declined).
+func CheckGtidSetSubset(ctx context.Context, db1 *sql.DB, db2 *sql.DB, source string, target string, opts Options) (unresolved bool, err error) {
+	sourceUUID, sourceGtidSet, err := getServerInfo(ctx, db1)
 	if err != nil {
-		return fmt.Errorf("failed to get source server info: %w", err)
+		return false, fmt.Errorf("failed to get source server info: %w", err)
 	}
 
-	// Get server information for target
-	targetUUID, targetGtidSet, err = getServerInfo(db2)
+	targetUUID, targetGtidSet, err := getServerInfo(ctx, db2)
 	if err != nil {
-		return fmt.Errorf("failed to get target server info: %w", err)
+		return false, fmt.Errorf("failed to get target server info: %w", err)
 	}
 
-	// Print source information
 	fmt.Println(blue("[+]"), "Source ->", source, "gtid_executed:", sourceGtidSet)
 	fmt.Println(blue("[+]"), "server_uuid:", sourceUUID)
+	fmt.Println(yellow("[+]"), "Target ->", target, "gtid_executed:", targetGtidSet)
+	fmt.Println(yellow("[+]"), "server_uuid:", targetUUID)
 
-	// Process each target host (though currently only one db2 connection is used)
-	targetHosts := strings.Split(target, ",")
-	for _, targetHost := range targetHosts {
-		// Re-get target GTID set (in case of multiple targets, but logic seems to assume single target)
-		_, targetGtidSet, err = getServerInfo(db2)
+	errantTransactions, err := checkErrantTransactions(ctx, targetGtidSet, sourceGtidSet, db2)
+	if err != nil {
+		return false, fmt.Errorf("failed to check errant transactions: %w", err)
+	}
+
+	if errantTransactions == "" {
+		fmt.Println(green("[+]"), "No Errant Transactions:", errantTransactions)
+	} else {
+		unresolved = true
+		fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
+
+		logName, err := getBinaryLogInfo(ctx, db2)
 		if err != nil {
-			return fmt.Errorf("failed to get target server info for %s: %w", targetHost, err)
+			return unresolved, fmt.Errorf("failed to get binary log info: %w", err)
 		}
+		fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
 
-		fmt.Println(yellow("[+]"), "Target ->", targetHost, "gtid_executed:", targetGtidSet)
-		fmt.Println(yellow("[+]"), "server_uuid:", targetUUID)
-
-		// Check for errant transactions
-		errantTransactions, err = checkErrantTransactions(targetGtidSet, sourceGtidSet, db2)
-		if err != nil {
-			return fmt.Errorf("failed to check errant transactions: %w", err)
-		}
-
-		if errantTransactions == "" {
-			fmt.Println(green("[+]"), "No Errant Transactions:", errantTransactions)
-		} else {
-			fmt.Println(red("[-]"), "Errant Transactions:", errantTransactions)
-
-			// Get binary log information
-			logName, executedGtidSet, err := getBinaryLogInfo(db2)
-			if err != nil {
-				return fmt.Errorf("failed to get binary log info: %w", err)
-			}
-
-			// Preserve the exact regex logic (even if it seems incorrect)
-			re := regexp.MustCompile("Errant Transactions: ([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}:[0-9]+)")
-			matches := re.FindStringSubmatch(executedGtidSet)
-			if len(matches) > 0 {
-				errantTransactions = matches[1]
-			}
-			fmt.Println(yellow("[-]"), "Errant Transaction Found in Log Name:", logName)
-
-			// Parse errant transactions into entries
+		if opts.Fix || opts.FixReplica {
 			entries, err := parseErrantTransactions(errantTransactions)
 			if err != nil {
-				return fmt.Errorf("failed to parse errant transactions: %w", err)
+				return unresolved, fmt.Errorf("failed to parse errant transactions: %w", err)
 			}
 
-			// Only attempt fixes if there are errant transactions AND fix flag is set
-			if (fix || fixReplica) && len(entries) > 0 {
-				var targetDB *sql.DB
-				var fixLocation string
-				var stopCmd, startCmd, statusCmd string
-
-				if fixReplica {
-					targetDB = db2
-					fixLocation = "replica"
-
-					fmt.Printf("Debug: fixReplica is true, will apply to replica\n")
-					fmt.Printf("Stopping replication on %s...\n", fixLocation)
-
-					// Determine replication commands based on MySQL version
-					stopCmd, startCmd, statusCmd, err = determineReplicationCommands(targetDB)
-					if err != nil {
-						return fmt.Errorf("failed to determine replication commands: %w", err)
+			if len(entries) > 0 {
+				switch {
+				case opts.FixReplica && opts.DryRun:
+					if err := dryRunReplicaFix(ctx, db2, entries); err != nil {
+						return unresolved, err
 					}
-
-					_, err = targetDB.Exec(stopCmd)
-					if err != nil {
-						return fmt.Errorf("failed to stop replication on %s: %w", fixLocation, err)
+				case opts.FixReplica:
+					prompt := fmt.Sprintf("About to apply %d empty transaction(s) on the REPLICA %s (replication will be stopped and restarted).", len(entries), target)
+					if !confirmAction(prompt, opts.AssumeYes) {
+						fmt.Println(yellow("[i]"), "Skipped applying errant GTIDs to replica.")
+						break
 					}
-					fmt.Printf("Replication stopped on %s\n", fixLocation)
-
-					// Make sure binary logging is disabled for this session
-					fmt.Printf("Disabling binary logging on %s...\n", fixLocation)
-					_, err = targetDB.Exec("SET sql_log_bin = 0")
-					if err != nil {
-						log.Printf("Warning: Failed to disable binary logging: %v\n", err)
-						// Continue anyway, as this might be allowed in some setups
+					if err := applyGtidsToReplica(ctx, db2, entries, "replica", errantTransactions); err != nil {
+						return unresolved, err
 					}
-				} else {
-					targetDB = db1
-					fixLocation = "source"
-					if fix {
-						fmt.Printf("Debug: fix is true, will apply to source\n")
-					} else {
-						fmt.Printf("Debug: Neither fix nor fixReplica is true\n")
+					unresolved = false
+				case opts.DryRun:
+					dryRunSourceFix(entries)
+				default:
+					prompt := fmt.Sprintf("About to apply %d empty transaction(s) on the SOURCE %s (they will replicate downstream).", len(entries), source)
+					if !confirmAction(prompt, opts.AssumeYes) {
+						fmt.Println(yellow("[i]"), "Skipped applying errant GTIDs to source.")
+						break
 					}
+					if err := applyGtidsToSource(ctx, db1, entries); err != nil {
+						return unresolved, err
+					}
+					unresolved = false
 				}
-
-				fmt.Printf("Applying errant GTIDs to %s...\n", fixLocation)
-
-				// Actually disable binary logging AGAIN right before applying GTIDs if we're on replica
-				if fixReplica {
-					_, err := targetDB.Exec("SET SESSION sql_log_bin = 0")
-					if err != nil {
-						log.Printf("Warning: Failed to disable binary logging (retry): %v\n", err)
-					}
-				}
-
-				// Apply the GTID fixes
-				err = applyGtidFixes(targetDB, entries, fixLocation)
-				if err != nil {
-					return fmt.Errorf("failed to apply GTID fixes to %s: %w", fixLocation, err)
-				}
-
-				if fixReplica {
-					// Re-enable binary logging
-					fmt.Printf("Re-enabling binary logging on %s...\n", fixLocation)
-					_, err = targetDB.Exec("SET sql_log_bin = 1")
-					if err != nil {
-						return fmt.Errorf("failed to re-enable binary logging on %s: %w", fixLocation, err)
-					}
-
-					// Start replication after applying GTIDs
-					fmt.Printf("Starting replication on %s...\n", fixLocation)
-					_, err = targetDB.Exec(startCmd)
-					if err != nil {
-						return fmt.Errorf("failed to start replication on %s: %w", fixLocation, err)
-					}
-
-					// Add a delay to allow replication to start up fully
-					fmt.Printf("Waiting for replication to initialize...\n")
-					time.Sleep(2 * time.Second)
-
-					// Verify replication is working
-					fmt.Printf("Verifying replication status on %s...\n", fixLocation)
-
-					// Check replication status
-					err = verifyReplicationStatus(targetDB, statusCmd, fixLocation, errantTransactions)
-					if err != nil {
-						return fmt.Errorf("failed to verify replication status on %s: %w", fixLocation, err)
-					}
-				}
-			}
-		}
-
-		// Handle fixMissingReplica
-		if fixMissingReplica {
-			missingGtids, err := checkMissingTransactions(sourceGtidSet, targetGtidSet, db1) // Use db1 for the query
-			if err != nil {
-				return fmt.Errorf("failed to check missing transactions: %w", err)
-			}
-			if missingGtids != "" {
-				fmt.Printf("[-] Missing GTIDs: %s\n", missingGtids)
-
-				entries, err := parseErrantTransactions(missingGtids)
-				if err != nil {
-					return fmt.Errorf("failed to parse missing GTIDs: %w", err)
-				}
-
-				err = applyMissingGtidFixes(db2, entries, "replica")
-				if err != nil {
-					return fmt.Errorf("failed to apply missing GTID fixes: %w", err)
-				}
-			} else {
-				fmt.Println(green("[+]"), "No Missing GTIDs")
 			}
 		}
 	}
-	return nil
+
+	if opts.FixMissingReplica {
+		missingGtids, err := checkMissingTransactions(ctx, sourceGtidSet, targetGtidSet, db1)
+		if err != nil {
+			return unresolved, fmt.Errorf("failed to check missing transactions: %w", err)
+		}
+		if missingGtids != "" {
+			fmt.Println(red("[-]"), "Missing GTIDs:", missingGtids)
+			fmt.Println(red("[!]"), "WARNING: injecting empty transactions for missing GTIDs marks them as")
+			fmt.Println(red("[!]"), "executed WITHOUT applying their data — the source will never resend them.")
+			fmt.Println(red("[!]"), "The skipped transactions' data must be synced separately (e.g. data-diff).")
+
+			entries, err := parseErrantTransactions(missingGtids)
+			if err != nil {
+				return unresolved, fmt.Errorf("failed to parse missing GTIDs: %w", err)
+			}
+
+			if opts.DryRun {
+				unresolved = true
+				if err := dryRunReplicaFix(ctx, db2, entries); err != nil {
+					return unresolved, err
+				}
+			} else {
+				prompt := fmt.Sprintf("About to mark %d missing transaction(s) as executed on the REPLICA %s WITHOUT applying their data.", len(entries), target)
+				if !confirmAction(prompt, opts.AssumeYes) {
+					fmt.Println(yellow("[i]"), "Skipped applying missing GTIDs to replica.")
+					return true, nil
+				}
+				if err := applyGtidsToReplica(ctx, db2, entries, "replica", ""); err != nil {
+					return unresolved, fmt.Errorf("failed to apply missing GTID fixes: %w", err)
+				}
+			}
+		} else {
+			fmt.Println(green("[+]"), "No Missing GTIDs")
+		}
+	}
+	return unresolved, nil
 }
